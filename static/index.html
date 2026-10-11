@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Craig Transcriber</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--muted:#667085;--line:#e3e6ec;--accent:#2457d6;--ok:#16794a;--bad:#b42318;--warn:#a15c00;--okbg:#e8f5ee;--badbg:#fdecea;--warnbg:#fff4e0}
+@media (prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1b2029;--ink:#e8ebf2;--muted:#98a2b3;--line:#2c3340;--accent:#7aa2ff;--ok:#5fd39a;--bad:#ff8b80;--warn:#f2b34c;--okbg:#14301f;--badbg:#3a1a17;--warnbg:#38290f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,"Segoe UI",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 16px 80px}
+h1{font-size:24px;margin:8px 0 2px}h2{font-size:19px;margin:0 0 4px}p{margin:6px 0}
+.sub{color:var(--muted)}section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:16px 0}
+.num{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;margin-right:8px}
+button,select,input[type=text]{font:inherit;color:inherit}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 13px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.big{padding:11px 22px;font-size:17px}
+select,input[type=text]{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 9px;max-width:100%}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted);margin:10px 0}
+.drop.over{border-color:var(--accent);background:rgba(36,87,214,.06)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.people{margin:10px 0}.person{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.person input[type=text]{width:180px}.dot{width:12px;height:12px;border-radius:50%}
+.pill{font-size:13px;border-radius:999px;padding:1px 9px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+.pill.ok{color:var(--ok);border-color:var(--ok)}
+.box{border-radius:10px;padding:10px 13px;margin:10px 0}.box.ok{background:var(--okbg);color:var(--ok)}.box.bad{background:var(--badbg);color:var(--bad)}.box.warn{background:var(--warnbg);color:var(--warn)}
+.box pre{white-space:pre-wrap;font-size:12.5px;color:var(--ink);margin:6px 0 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:12px 0}
+.grid label{display:block;font-weight:600;font-size:14px;margin-bottom:3px}.grid select,.grid input{width:100%}
+.bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden;margin:8px 0}.bar>div{height:100%;background:var(--accent);width:0;transition:width .4s}
+.live{font-size:14px;color:var(--muted);border-left:3px solid var(--line);padding-left:10px;margin-top:8px;word-break:break-word}
+details summary{cursor:pointer;color:var(--accent)}
+.bar2{position:sticky;top:0;z-index:5;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:10px 0;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.line{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:10px 6px;border-top:1px solid var(--line);border-left:4px solid transparent}
+.line.playing{background:rgba(36,87,214,.08);border-left-color:var(--accent)}.line.done{opacity:.72}
+.meta{font-size:14px}.meta .who{font-weight:700}.meta .t{color:var(--muted);font-variant-numeric:tabular-nums}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.tag{font-size:11.5px;border-radius:5px;padding:0 6px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}.tag.low{color:var(--warn);border-color:var(--warn)}
+textarea{width:100%;font:inherit;line-height:1.45;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 9px;resize:vertical;min-height:40px}
+textarea:focus{outline:2px solid var(--accent);border-color:transparent}
+.acts{display:flex;flex-wrap:wrap;gap:12px;align-items:center;font-size:14px;margin-top:4px;color:var(--muted)}
+.acts button{padding:2px 9px;font-size:13px}.play{padding:3px 11px}
+@media (max-width:640px){.line{grid-template-columns:1fr}}
+.hide{display:none!important}.muted{color:var(--muted)}.small{font-size:14px}
+</style></head><body><main>
+<h1>Craig Transcriber</h1>
+<p class="sub">Turn a Craig recording into a written transcript, then listen line by line and fix the mistakes. Everything stays on this computer.</p>
+<div id="envBox"></div>
+
+<section id="s1"><h2><span class="num">1</span>Add your recording</h2>
+<p class="sub">Drop the files you downloaded from Craig. Craig records each person on their own track, so you get one audio file per person, usually inside a .zip.</p>
+<div class="drop" id="drop">Drop the .zip or audio files here<br><span class="small">.flac, .wav, .mp3 and similar all work</span><br><br><button id="pick" class="primary">Choose files…</button><input id="file" type="file" multiple hidden accept=".zip,audio/*,.flac,.wav,.mp3,.ogg,.m4a,.aac,.opus"></div>
+<div id="upMsg" class="small muted"></div>
+<div class="people" id="people"></div></section>
+
+<section id="s2"><h2><span class="num">2</span>Make the transcript</h2>
+<p class="sub">An AI model called Whisper listens to each person and types what they said. It runs on your computer. The first time, the model is downloaded once.</p>
+<div class="grid">
+ <div><label for="lang">Language spoken</label><select id="lang"><option value="th">Thai (also best when Thai and English are mixed)</option><option value="en">English</option><option value="">Detect automatically (less reliable for mixed speech)</option></select></div>
+ <div><label for="model">Quality</label><select id="model"></select><div class="small muted" id="modelHint"></div></div>
+ <div><label for="device">Use</label><select id="device"><option value="auto">Graphics card if available</option><option value="cpu">Processor only</option></select></div>
+</div>
+<details><summary>Optional: help it with names and words</summary>
+<p class="small muted">Type words that appear in your talk (names, product or technical terms, in the spelling you want). Whisper tends to copy this spelling.</p>
+<input type="text" id="prompt" style="width:100%" placeholder="e.g. ขนุน, Chulalongkorn, deadline, backend, Go Fiber"><p class="small muted">Other model name (advanced): <input type="text" id="custom" style="width:280px" placeholder="leave empty, or e.g. a Hugging Face faster-whisper model"></p></details>
+<div class="row" style="margin-top:12px"><button class="primary big" id="go">Start transcribing</button><button id="stop" class="hide">Stop</button><span class="small muted" id="goHint"></span></div>
+<div id="job" class="hide"><p><b id="jobWho"></b></p><div class="bar"><div id="jobBar"></div></div><p id="jobText" class="small"></p><p id="jobNote" class="small muted"></p><div class="live" id="live"></div></div>
+<div id="jobEnd"></div></section>
+
+<section id="s3"><h2><span class="num">3</span>Check and fix</h2>
+<p class="sub">Press ▶ on a line to hear it. Type in the box to fix the words. Tick <b>reviewed</b> when a line is right, or press <b>Alt+Enter</b> to tick it and play the next line. Edits save automatically.</p>
+<div class="bar2" id="tools">
+ <button id="halt">■ Stop audio</button>
+ <label>Speed <select id="rate"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option></select></label>
+ <label><input type="checkbox" id="loop"> repeat line</label>
+ <label><input type="checkbox" id="auto"> play next line automatically</label>
+ <label>Show <select id="filter"><option value="all">all lines</option><option value="todo">not reviewed yet</option><option value="check">worth a second look</option></select></label>
+ <span class="small muted" id="counts"></span><span class="small muted" id="saveState"></span>
+</div>
+<details><summary>Find and replace</summary><div class="row" style="margin:8px 0"><input type="text" id="find" placeholder="Find"><input type="text" id="repl" placeholder="Replace with"><label class="small"><input type="checkbox" id="matchCase"> match case</label><button id="replaceAll">Replace all</button><span class="small muted" id="replMsg"></span></div></details>
+<p class="small muted" id="emptyLines">There are no lines yet. Finish step 2 first.</p>
+<div id="list"></div></section>
+
+<section id="s4"><h2><span class="num">4</span>Save your work</h2>
+<p class="sub">Each line is written as <code>[time] Person: words</code>, all people merged in time order. Your work is also saved automatically in the <code>craig_work</code> folder, so you can close this and carry on later.</p>
+<div class="row"><a href="/export.txt"><button class="primary">Download text (.txt)</button></a><a href="/export.srt"><button>Download subtitles (.srt)</button></a><a href="/export.json"><button>Download data (.json)</button></a><button id="reset" style="margin-left:auto">Start over</button></div></section>
+<audio id="player" preload="auto"></audio>
+</main>
+<script>
+(()=>{
+const $=s=>document.querySelector(s), COLORS=['#2563eb','#c026d3','#059669','#d97706','#dc2626','#0891b2','#7c3aed','#65a30d'];
+const PAD_B=0.4, PAD_A=0.3;
+let S={speakers:[],lines:[],env:{}}, polling=null, cur=null, watch=null; const picks=new Map();
+const spk=id=>S.speakers.find(s=>s.id===id), col=id=>COLORS[Math.max(0,S.speakers.findIndex(s=>s.id===id))%COLORS.length];
+const fmt=t=>{if(!isFinite(t))return '—';t=Math.max(0,Math.floor(t));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;return (h?h+':'+String(m).padStart(2,'0'):String(m).padStart(2,'0'))+':'+String(s).padStart(2,'0')};
+async function api(path,body){const r=await fetch(path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const j=await r.json().catch(()=>({error:'Bad reply'}));if(!r.ok||j.error)throw new Error(j.error||r.statusText);return j}
+function el(tag,attrs={},...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else e.setAttribute(k,v)}for(const c of kids.flat())if(c!=null)e.append(c);return e}
+
+const MODELS=[['small','Balanced (small, 0.5 GB)'],['medium','Better (medium, 1.5 GB)'],['large-v3-turbo','Fast and good (turbo, 1.6 GB)'],['large-v3','Most accurate (large-v3, 3 GB)']];
+function renderEnv(){
+  const e=S.env, b=$('#envBox'); b.textContent='';
+  if(!e.engine) b.append(el('div',{class:'box bad'},el('b',{},'The transcription engine is not installed. '),'Open a terminal, run ',el('code',{},'pip install faster-whisper'),', then start this program again.'));
+  else if(e.cuda>0) b.append(el('div',{class:'box ok'},'✓ NVIDIA graphics card found. Transcribing will use it, which is much faster.'));
+  else b.append(el('div',{class:'box warn'},'No NVIDIA graphics card was found, so the processor does the work. That is much slower: try a short recording first and choose the Balanced quality.',
+    el('details',{},el('summary',{},'I have an NVIDIA card. Why was it not found?'),el('p',{class:'small'},'Update your NVIDIA driver, then run: ',el('code',{},'pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"'),' and start this program again. It needs a card that supports CUDA 12 (most GeForce cards from the last several years do).'))));
+  const sel=$('#model'); if(!sel.options.length){for(const[v,t]of MODELS)sel.append(el('option',{value:v},t));sel.value=e.cuda>0?'large-v3':'small'; updateModelHint()}
+}
+function updateModelHint(){const v=$('#model').value,gpu=S.env.cuda>0;$('#modelHint').textContent=(!gpu&&/large|medium/.test(v))?'This quality is very slow without a graphics card.':''}
+$('#model').onchange=updateModelHint;
+
+$('#pick').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{upload([...e.target.files]);e.target.value=''};
+document.addEventListener('dragover',e=>{e.preventDefault();$('#drop').classList.add('over')});
+document.addEventListener('dragleave',e=>{if(e.target===document.documentElement)$('#drop').classList.remove('over')});
+document.addEventListener('drop',e=>{e.preventDefault();$('#drop').classList.remove('over');if(e.dataTransfer.files.length)upload([...e.dataTransfer.files])});
+function upload(files){
+  return files.reduce((p,f)=>p.then(()=>new Promise(res=>{
+    const x=new XMLHttpRequest();x.open('POST','/api/upload?name='+encodeURIComponent(f.name));
+    x.upload.onprogress=e=>{$('#upMsg').textContent=`Adding ${f.name}… ${Math.round(e.loaded/1048576)} of ${Math.round(e.total/1048576)} MB`};
+    x.onload=()=>{let j={};try{j=JSON.parse(x.responseText)}catch(_){}
+      $('#upMsg').textContent=j.error?('⚠ '+j.error):`Added ${(j.added||[]).join(', ')}`;res()};
+    x.onerror=()=>{$('#upMsg').textContent='⚠ Could not send '+f.name;res()};
+    x.send(f)})),Promise.resolve()).then(refresh);
+}
+function renderPeople(){
+  const box=$('#people');box.textContent='';
+  if(!S.speakers.length){box.append(el('p',{class:'muted small'},'No recordings yet.'));return}
+  box.append(el('b',{},'People in this recording'));
+  for(const sp of S.speakers){
+    const n=S.lines.filter(l=>l.spk===sp.id).length, nm=el('input',{type:'text',value:sp.name});
+    const pk=el('input',{type:'checkbox'});pk.checked=picks.has(sp.id)?picks.get(sp.id):n===0;pk.dataset.pick=sp.id;pk.onchange=()=>picks.set(sp.id,pk.checked);
+    nm.onchange=async()=>{await api('/api/speaker',{id:sp.id,name:nm.value});refresh()};
+    box.append(el('div',{class:'person'},el('span',{class:'dot',style:'background:'+col(sp.id)}),nm,
+      el('span',{class:'small muted'},sp.duration?fmt(sp.duration):'length unknown'),
+      el('span',{class:'pill'+(n?' ok':'')},n?`${n} lines`:'no transcript yet'),
+      el('label',{class:'small'},pk,' transcribe'),
+      el('button',{onclick:async()=>{if(confirm('Remove '+sp.name+' and their lines?')){await api('/api/speaker/remove',{id:sp.id});refresh()}}},'Remove')));
+  }
+}
+
+$('#go').onclick=async()=>{
+  const ids=[...document.querySelectorAll('[data-pick]')].filter(c=>c.checked).map(c=>c.dataset.pick);
+  if(!ids.length){$('#goHint').textContent=S.speakers.length?'Tick at least one person first.':'Add a recording first (step 1).';return}
+  const redo=S.speakers.filter(s=>ids.includes(s.id)&&S.lines.some(l=>l.spk===s.id&&l.ok)).map(s=>s.name);
+  if(redo.length&&!confirm(`Transcribing ${redo.join(', ')} again replaces their lines, including your fixes and reviewed ticks. Continue?`))return;
+  $('#goHint').textContent='';$('#jobEnd').textContent='';
+  try{await api('/api/transcribe',{speakers:ids,model:$('#custom').value.trim()||$('#model').value,language:$('#lang').value,device:$('#device').value,prompt:$('#prompt').value});poll()}
+  catch(e){$('#jobEnd').append(el('div',{class:'box bad'},e.message))}
+};
+$('#stop').onclick=()=>{api('/api/cancel',{});$('#stop').disabled=true;$('#stop').textContent='Stopping…'};
+function poll(){clearInterval(polling);tick();polling=setInterval(tick,1000)}
+async function tick(){
+  const j=await api('/api/status').catch(()=>null);if(!j||!j.phase)return;
+  const running=!!j.running;
+  $('#job').classList.toggle('hide',false);$('#go').classList.toggle('hide',running);$('#stop').classList.toggle('hide',!running);
+  $('#stop').disabled=!running;if(running&&$('#stop').textContent==='Stopping…'&&!j.cancel)$('#stop').textContent='Stop';
+  if(running){
+    $('#jobWho').textContent=j.phase==='loading'?'Getting the model ready…':`Person ${j.index+1} of ${j.count}: ${j.who}`;
+    const frac=j.dur>0?Math.min(1,(j.index+j.pos/j.dur)/j.count):0;$('#jobBar').style.width=(j.phase==='loading'?3:frac*100)+'%';
+    let t=j.message||'';
+    if(j.phase==='working'){t=`Heard ${fmt(j.pos)}`+(j.dur?` of ${fmt(j.dur)}`:'')+` · ${fmt(j.elapsed)} elapsed · using the ${j.device==='cuda'?'graphics card':'processor'}`;
+      if(j.pos>20&&j.dur&&j.elapsed>10){const left=(j.dur-j.pos)*(j.elapsed/Math.max(1,j.index*j.dur+j.pos));t+=` · about ${fmt(left)} left for this person`}}
+    $('#jobText').textContent=t;$('#jobNote').textContent=j.note||'';
+    $('#live').textContent='';for(const r of j.recent||[])$('#live').append(el('div',{},r));
+  }else{
+    clearInterval(polling);polling=null;
+    $('#job').classList.add('hide');const end=$('#jobEnd');end.textContent='';
+    if(j.phase==='error'){end.append(el('div',{class:'box bad'},el('b',{},'Whisper stopped with an error. '),j.error,
+      el('p',{class:'small'},'Nothing you did is lost. Try the Balanced quality, or choose "Processor only", then start again.'),
+      el('details',{},el('summary',{},'Technical details'),el('pre',{},j.error+'\n'+(j.trace||'')+'\nengine python '+S.env.py+' cuda='+S.env.cuda))))}
+    else if(j.phase==='cancelled')end.append(el('div',{class:'box warn'},'Stopped. People who finished were saved; the person in progress kept their previous lines.'));
+    else if(j.phase==='done')end.append(el('div',{class:'box ok'},el('b',{},'Done. '),`Finished in ${fmt(j.seconds)}. Next, check the lines in step 3. Start with the ones tagged TH/EN, since mixed Thai and English is where the model slips most. `,el('button',{class:'primary',onclick:()=>$('#s3').scrollIntoView()},'Go to step 3 ›')));
+    picks.clear();await refresh();
+  }
+}
+
+const hasThai=s=>/[฀-๿]/.test(s), hasLatin=s=>(s.match(/[A-Za-z]/g)||[]).length>=2;
+const mixed=l=>hasThai(l.text)&&hasLatin(l.text), unsure=l=>l.conf!=null&&l.conf<-0.9;
+const pend=new Map();let saveT=null;
+function queue(id,patch){pend.set(id,Object.assign(pend.get(id)||{id},patch));$('#saveState').textContent='Saving…';clearTimeout(saveT);saveT=setTimeout(flush,600)}
+async function flush(){const u=[...pend.values()];pend.clear();if(!u.length)return;try{await api('/api/lines',{updates:u});$('#saveState').textContent='Saved ✓'}catch(e){$('#saveState').textContent='⚠ Not saved: '+e.message}}
+function visible(){const f=$('#filter').value;return S.lines.filter(l=>f==='all'||(f==='todo'&&!l.ok)||(f==='check'&&!l.ok&&(mixed(l)||unsure(l))))}
+function counts(){const n=S.lines.length,d=S.lines.filter(l=>l.ok).length;$('#counts').textContent=n?`${n} lines · ${d} reviewed`:''}
+function autosize(t){t.style.height='auto';t.style.height=Math.max(40,t.scrollHeight+2)+'px'}
+function renderLines(){
+  const list=$('#list');list.textContent='';$('#emptyLines').classList.toggle('hide',S.lines.length>0);counts();
+  for(const l of visible()){
+    const sp=spk(l.spk), ta=el('textarea',{lang:'th',spellcheck:'false'});ta.value=l.text;
+    const ck=el('input',{type:'checkbox'});ck.checked=l.ok;
+    const row=el('div',{class:'line'+(l.ok?' done':''),'data-id':l.id});
+    const tags=el('div',{class:'tags'});if(mixed(l))tags.append(el('span',{class:'tag'},'TH/EN'));if(unsure(l))tags.append(el('span',{class:'tag low'},'unsure'));
+    row.append(el('div',{class:'meta'},el('div',{},el('button',{class:'play',onclick:()=>playLine(l.id)},'▶')),
+        el('div',{class:'who',style:'color:'+col(l.spk)},sp?sp.name:'?'),el('div',{class:'t'},fmt(l.start)+' – '+fmt(l.end)),tags),
+      el('div',{},ta,el('div',{class:'acts'},el('label',{},ck,' reviewed'),
+        el('button',{onclick:async()=>{const r=await api('/api/line/add',{after:l.id});S.lines.push(r.line);S.lines.sort((a,b)=>a.start-b.start);renderLines();document.querySelector(`[data-id="${r.line.id}"] textarea`)?.focus()}},'+ line below'),
+        el('button',{onclick:async()=>{if(!l.text||confirm('Delete this line?')){await api('/api/line/delete',{id:l.id});S.lines=S.lines.filter(x=>x.id!==l.id);renderLines()}}},'delete'),
+        l.text!==l.orig&&l.orig?el('span',{class:'tag'},'edited'):null)));
+    ta.addEventListener('input',()=>{l.text=ta.value;autosize(ta);queue(l.id,{text:ta.value})});
+    ck.onchange=()=>{l.ok=ck.checked;row.classList.toggle('done',l.ok);queue(l.id,{ok:l.ok});counts()};
+    ta.addEventListener('keydown',e=>{if(e.altKey&&e.key==='Enter'){e.preventDefault();l.ok=true;ck.checked=true;row.classList.add('done');queue(l.id,{ok:true});counts();
+      const v=visible(),i=v.findIndex(x=>x.id===l.id),nx=v[i+1];if(nx){document.querySelector(`[data-id="${nx.id}"] textarea`)?.focus();playLine(nx.id)}}});
+    list.append(row);
+  }
+  const tas=[...list.querySelectorAll('textarea')];   // batch: one layout, not one per line
+  tas.forEach(t=>t.style.height='auto');const hs=tas.map(t=>t.scrollHeight);tas.forEach((t,i)=>t.style.height=Math.max(40,hs[i]+2)+'px');
+  if(cur)mark(cur);
+}
+$('#filter').onchange=renderLines;
+window.addEventListener('beforeunload',e=>{if(pend.size>0){e.preventDefault();e.returnValue=''}});
+$('#replaceAll').onclick=async()=>{
+  const f=$('#find').value;if(!f)return;const mc=$('#matchCase').checked,re=new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),mc?'g':'gi');
+  const ch=[];for(const l of S.lines){const t=l.text.replace(re,()=>$('#repl').value);if(t!==l.text){ch.push({id:l.id,text:t});l.text=t}}
+  if(ch.length)await api('/api/lines',{updates:ch});$('#replMsg').textContent=ch.length?`Changed ${ch.length} line${ch.length>1?'s':''}`:'Nothing found';renderLines()};
+
+const player=$('#player');
+function mark(id){document.querySelectorAll('.line.playing').forEach(e=>e.classList.remove('playing'));document.querySelector(`[data-id="${id}"]`)?.classList.add('playing')}
+function playLine(id){
+  const l=S.lines.find(x=>x.id===id);if(!l)return;cur=id;mark(id);
+  const url='/audio/'+l.spk, go=()=>{player.currentTime=Math.max(0,l.start-PAD_B);player.playbackRate=+$('#rate').value;player.play().catch(e=>alert('The browser could not play this audio: '+e.message+'\nTry converting the file to WAV or MP3.'));clearInterval(watch);watch=setInterval(check,40)};
+  if(!player.src.endsWith(url)){player.src=url;player.addEventListener('loadedmetadata',go,{once:true});player.load()}else go();
+}
+function check(){
+  const l=S.lines.find(x=>x.id===cur);if(!l||player.paused){if(!l)clearInterval(watch);return}
+  if(player.currentTime>=l.end+PAD_A){
+    if($('#loop').checked){player.currentTime=Math.max(0,l.start-PAD_B);return}
+    const v=visible(),i=v.findIndex(x=>x.id===cur);
+    if($('#auto').checked&&v[i+1]){playLine(v[i+1].id);document.querySelector(`[data-id="${v[i+1].id}"]`)?.scrollIntoView({block:'center',behavior:'smooth'})}
+    else halt();
+  }
+}
+function halt(){player.pause();clearInterval(watch);document.querySelectorAll('.line.playing').forEach(e=>e.classList.remove('playing'));cur=null}
+$('#halt').onclick=halt;$('#rate').onchange=()=>{player.playbackRate=+$('#rate').value};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')halt()});
+
+$('#reset').onclick=async()=>{if(confirm('Delete all audio copies and transcripts in this program and start over? Your original files are not touched.')){try{await api('/api/reset',{});$('#jobEnd').textContent='';refresh()}catch(e){alert(e.message)}}};
+async function refresh(){
+  await flush();S=await api('/api/state');
+  for(const sp of S.speakers) if(S.lines.some(l=>l.spk===sp.id)&&!picks.has(sp.id)) picks.set(sp.id,false);   // already has a transcript: do not redo by default
+  picks.forEach((v,k)=>{if(!S.speakers.some(s=>s.id===k))picks.delete(k)});
+  renderEnv();renderPeople();renderLines();
+}
+refresh().then(()=>api('/api/status').then(j=>{if(j&&j.running)poll()}));
+})();
+</script></body></html>
