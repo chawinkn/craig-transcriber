@@ -1,0 +1,6 @@
+craig_work
+.git
+__pycache__
+CLAUDE.md
+test_*.py
+.venv
