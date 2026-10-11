@@ -1,0 +1,160 @@
+<div align="center">
+
+# Craig Transcriber
+
+**Turn a [Craig](https://craig.chat) multi-track Discord recording into an accurate, speaker-labelled transcript, entirely on your own computer.**
+
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![Whisper](https://img.shields.io/badge/engine-faster--whisper-green)
+![Docker](https://img.shields.io/badge/docker-ready-2496ED)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
+
+[Overview](#overview) • [Features](#features) • [Getting started](#getting-started) • [Usage](#usage) • [Choosing a model](#choosing-a-model) • [Development](#development) • [Troubleshooting](#troubleshooting)
+
+</div>
+
+## Overview
+
+[Craig](https://craig.chat) records each person in a Discord call on a separate audio track. Craig Transcriber runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) on each track and merges the results into one transcript in time order. Because every track belongs to one person, each line is labelled with the right speaker, with no diarization guesswork. A browser-based review screen then lets you listen line by line and fix what Whisper got wrong.
+
+> [!NOTE]
+> Nothing leaves your machine. Audio, transcripts and models all stay local. This project is not affiliated with Craig or OpenAI.
+
+## Features
+
+- **Drop in Craig's `.zip`**, or individual audio files (FLAC, WAV, MP3, OGG, Opus, M4A, ...). One track per person.
+- **Local transcription**: Whisper models from `small` to `large-v3`. It runs on an NVIDIA GPU (CUDA 12), falls back automatically to the CPU, and is resilient to GPU errors mid-run.
+- **Thai, English or auto-detect**. Thai mode handles mixed Thai/English speech best.
+- **Spelling hints**: a word list steers how names and technical terms are written.
+- **Fast review**:
+  - Play any line, change the speed, loop it, or auto-play the next one.
+  - `Alt+Enter` marks a line reviewed and plays the next.
+  - Filter to unreviewed lines or lines worth a second look (low confidence or mixed language).
+  - Find and replace across the transcript.
+- **Safe by default**:
+  - Edits save automatically.
+  - Re-transcribing a person replaces their lines only after the new run succeeds.
+  - Closing the tab with unsaved edits warns you.
+- **Export** as `.txt` (`[time] Person: words`), `.srt` subtitles, or `.json`.
+
+## Getting started
+
+You can run it with Docker (simplest, with the `large-v3` model included) or directly with Python.
+
+### Option 1: Docker
+
+Prerequisites:
+
+- [Docker](https://docs.docker.com/get-docker/)
+- For GPU acceleration: an NVIDIA driver and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) _(Docker Desktop on Windows/WSL2 already includes GPU support)_
+
+1. Build the image:
+   ```bash
+   docker build --build-arg GPU=1 -t craig-transcriber .   # omit --build-arg GPU=1 for CPU only
+   ```
+2. Run it (drop `--gpus all` on a machine without an NVIDIA GPU):
+   ```bash
+   docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v craig_data:/data craig-transcriber
+   ```
+3. Open http://127.0.0.1:8765.
+
+Your work is stored in the `craig_data` volume and survives rebuilds.
+
+> [!NOTE]
+> The image bakes in the `large-v3` model, so the first build downloads about 3 GB and the image is about 6 GB. Other models are downloaded on demand and are discarded when the container exits.
+
+> [!IMPORTANT]
+> Keep `127.0.0.1:` in the `-p` flag. The app has no login, so publishing the port on all interfaces lets anyone on your network read and delete your transcripts.
+
+### Option 2: Python
+
+Prerequisites:
+
+- [Python](https://www.python.org/downloads/) 3.9 or later
+- For GPU acceleration: an NVIDIA GPU with a driver that supports CUDA 12
+
+1. Create a virtual environment and install the dependencies:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate        # Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
+   pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"   # optional, for NVIDIA GPUs
+   ```
+2. Start the app:
+   ```bash
+   python main.py
+   ```
+
+Your browser opens at http://127.0.0.1:8765, and your work is saved in `craig_work/`.
+
+> [!TIP]
+> A virtual environment is strongly recommended. The dependencies take several GB, and many Linux distributions refuse system-wide `pip install` with `externally-managed-environment`.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--port` | `8765` | Port to listen on |
+| `--host` | `127.0.0.1` | Address to listen on |
+| `--data` | `craig_work` | Folder for audio copies and your work |
+| `--no-browser` | | Don't open the browser automatically |
+
+## Usage
+
+The app walks you through four steps:
+
+1. **Add your recording.** Download the multi-track `.zip` from Craig after the call, and drop it on the page. Each person appears with their Discord name, and you can rename them.
+2. **Make the transcript.**
+   - Pick the language, the quality (model) and the device, then press **Start transcribing**.
+   - Optionally, open the hints and list names or terms in the spelling you want.
+   - Progress, an estimated time left and the latest lines show live.
+3. **Check and fix.**
+   - Press ▶ to hear a line, type to correct it, and tick **reviewed** (or press `Alt+Enter` to tick it and move on).
+   - Start with the lines tagged **unsure** or **TH/EN**, using the "worth a second look" filter.
+4. **Save your work.** Download the transcript as `.txt`, `.srt` or `.json`.
+
+## Choosing a model
+
+| Model | Download | Notes |
+|---|---|---|
+| `small` | ~0.5 GB | Default without a GPU; fine on a CPU |
+| `medium` | ~1.5 GB | Better; slow on a CPU |
+| `large-v3-turbo` | ~1.6 GB | Several times faster than `large-v3`; accuracy varies by language |
+| `large-v3` | ~3 GB | Most accurate; default with a GPU; fits in ~6 GB of VRAM |
+
+You can also enter any other faster-whisper model name or Hugging Face repository under **Other model name**.
+
+> [!NOTE]
+> Each person's track is transcribed separately and spans the whole recording, though silence is skipped. Total time grows with both the meeting length and the number of people. Without a GPU, the large models take hours for a long meeting.
+
+## Development
+
+```bash
+python3 test_app.py   # stdlib unittest; no model or GPU needed
+```
+
+| File | Role |
+|---|---|
+| `main.py` | Entry point: parses arguments, wires everything together, starts the server |
+| `project.py` | `Project`: the saved project (speakers, lines, audio copies) and exports |
+| `transcribe.py` | `WhisperEngine` (model loading, audio decoding) and `Job` (the background transcription job) |
+| `server.py` | HTTP handler: JSON API, audio streaming with Range support, the page |
+| `static/index.html` | The whole frontend, with no build step |
+
+`static/index.html` is re-read on every request, so HTML edits need only a browser reload. Python edits need a restart.
+
+With Docker, the source is copied into the image at build time. To iterate without rebuilding, mount it:
+
+```bash
+docker run --init --rm -p 127.0.0.1:8765:8765 -v craig_data:/data -v "$PWD:/app" craig-transcriber
+```
+
+Rebuild after changing the `Dockerfile` or dependencies. The dependency and model layers are cached, so a source-only rebuild is quick.
+
+## Troubleshooting
+
+- **"No NVIDIA graphics card was found"**:
+  - Update your NVIDIA driver, and with Python, install the optional `nvidia-*` packages above.
+  - With Docker, build with `--build-arg GPU=1` and run with `--gpus all`.
+  - The card must support CUDA 12.
+- **The graphics card fails or runs out of memory**: the app switches to the CPU on its own. To stay on the GPU, choose a smaller model such as `large-v3-turbo` or `medium`, and close other GPU-heavy apps.
+- **"Could not start on port 8765"**: another copy, or a container, is already using that port. Start with `--port 8766`, or with Docker map `-p 127.0.0.1:8766:8765`.
+- **Start over**: use the **Start over** button in the app. Alternatively, delete `craig_work/`, or for Docker run `docker volume rm craig_data`.
