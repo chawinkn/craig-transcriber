@@ -120,8 +120,9 @@ class WhisperEngine:
             audio, language=language or None, beam_size=5, vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500), condition_on_previous_text=False,
             initial_prompt=prompt or None, hotwords=prompt or None,
-            # PONYTAIL: thresholds not yet tuned on real noisy Thai audio; revisit with issue #5's comparison.
-            word_timestamps=True, hallucination_silence_threshold=2.0, no_repeat_ngram_size=10)
+            # No hallucination_silence_threshold: on noisy Thai audio it dropped ~70% of real speech (#4).
+            # PONYTAIL: no_repeat_ngram_size=10 measured on two one-minute clips only; retune with more recordings.
+            word_timestamps=True, no_repeat_ngram_size=10)
         self.language = getattr(info, "language", "")
         return len(audio) / 16000.0, ({"start": float(s.start), "end": float(s.end), "text": s.text,
                                        "conf": getattr(s, "avg_logprob", None),

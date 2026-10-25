@@ -177,15 +177,15 @@ class WhisperEngineTest(unittest.TestCase):
                 self._model, self.device = Model(), "cpu"
         return Engine("m", True, lambda **kw: None), calls
 
-    def test_vocabulary_is_prompt_and_hotwords_and_loops_are_guarded(self):
+    def test_vocabulary_is_prompt_and_hotwords_and_loops_are_guarded_without_silence_skip(self):
         engine, calls = self.engine()
         dur, segs = engine.transcribe("a.wav", "th", "ขนุน, Go Fiber")
         self.assertEqual((dur, list(segs)[0]["text"], engine.language), (2.0, " hi", "th"))
         kw = calls[0]
         self.assertEqual((kw["language"], kw["initial_prompt"], kw["hotwords"]), ("th", "ขนุน, Go Fiber", "ขนุน, Go Fiber"))
         self.assertTrue(kw["word_timestamps"])
-        self.assertGreater(kw["hallucination_silence_threshold"], 0)
         self.assertGreater(kw["no_repeat_ngram_size"], 0)
+        self.assertNotIn("hallucination_silence_threshold", kw)   # dropped ~70% of speech on noisy audio (#4)
 
     def test_no_vocabulary_sends_no_hotwords(self):
         engine, calls = self.engine()
