@@ -44,37 +44,39 @@ def cuda_count():
         return 0
 
 
-MODELS = [{"name": "small", "label": "Balanced (small, 0.5 GB)"},
-          {"name": "medium", "label": "Better (medium, 1.5 GB)"},
-          {"name": "large-v3-turbo", "label": "Fast and good (turbo, 1.6 GB)"},
-          {"name": "large-v3", "label": "Most accurate (large-v3, 3 GB)"},
-          {"name": "typhoon", "label": "Thai, most accurate (Typhoon large-v3, 3 GB)",
+MODELS = [{"name": "small", "label": "Balanced (small, 0.5 GB)", "default": "cpu"},
+          {"name": "medium", "label": "Better (medium, 1.5 GB)", "slow": True},
+          {"name": "large-v3-turbo", "label": "Fast and good (turbo, 1.6 GB)", "slow": True},
+          {"name": "large-v3", "label": "Most accurate (large-v3, 3 GB)", "slow": True, "default": "gpu"},
+          {"name": "typhoon", "label": "Thai, most accurate (Typhoon large-v3, 3 GB)", "slow": True,
            "repo": "typhoon-ai/typhoon-whisper-large-v3"},
-          {"name": "pathumma", "label": "Thai, noisy audio (Pathumma noise, 3 GB)",
+          {"name": "pathumma", "label": "Thai, noisy audio (Pathumma noise, 3 GB)", "slow": True,
            "repo": "PogusTheWhisper/Pathumma-whisper-th-large-v3-natural-noise-finetuned"}]
 THAI_MODELS = {m["name"]: m["repo"] for m in MODELS if "repo" in m}
 MODEL_FILES = ("model.bin", "config.json", "tokenizer.json", "preprocessor_config.json")   # what faster-whisper reads
 
 
-def thai_model_dir(data_dir, name):
+def model_dir(data_dir, name):
     return Path(data_dir) / "models" / name
 
 
-def _missing_files(data_dir, name):
-    return [f for f in MODEL_FILES if not (thai_model_dir(data_dir, name) / f).exists()]
+def thai_model_state(data_dir, name):
+    """("installed" | "incomplete" | "missing", the files that are missing)."""
+    missing = [f for f in MODEL_FILES if not (model_dir(data_dir, name) / f).exists()]
+    return ("installed" if not missing else "missing" if len(missing) == len(MODEL_FILES) else "incomplete"), missing
 
 
 def model_catalog(data_dir):
     """Every model the app offers; a Thai model also has "state": installed, incomplete or missing."""
     out = []
     for m in MODELS:
-        entry = {"name": m["name"], "label": m["label"], "thai": "repo" in m}
+        entry = {"name": m["name"], "label": m["label"], "thai": "repo" in m, "slow": bool(m.get("slow"))}
+        if m.get("default"):
+            entry["default"] = m["default"]
         if entry["thai"]:
-            missing = _missing_files(data_dir, m["name"])
-            entry["state"] = "installed" if not missing else "missing" if len(missing) == len(MODEL_FILES) else "incomplete"
+            entry["state"] = thai_model_state(data_dir, m["name"])[0]
         out.append(entry)
     return out
-
 
 
 def looks_hallucinated(text):
@@ -289,6 +291,7 @@ class ProcessEngine:
         except EngineCrashed:
             if prefer_cpu:
                 raise
+            self._stop()
             on_status(note="The graphics card crashed while loading the model. Trying the processor, which is slower.")
             self._start(True)
 
@@ -328,28 +331,40 @@ class ProcessEngine:
         if kind == "error":
             raise RuntimeError(rest[0])
         dur, self.language = rest
-        return dur, self._segments()
+        return dur, _SegmentStream(self)
 
-    def _segments(self):
-        finished = False
+
+class _SegmentStream:
+    """Segments from the child. close() before the end (a cancel) stops the child's run and reads up to its end,
+    so the pipe is clean for the next run, even if no segment was read yet."""
+
+    def __init__(self, engine):
+        self._engine, self._open = engine, True
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if not self._open:
+            raise StopIteration
         try:
-            while True:
-                kind, rest = self._recv()
-                if kind == "seg":
-                    yield rest[0]
-                    continue
-                finished = True
-                if kind == "error":
-                    raise RuntimeError(rest[0])
-                return
+            kind, rest = self._engine._recv()
         except EngineCrashed:
-            finished = True
+            self._open = False
             raise
-        finally:
-            if not finished:                        # closed early (cancel): stop the child's run and drain it
-                self._conn.send(("cancel",))
-                while self._recv()[0] not in ("end", "error"):
-                    pass
+        if kind == "seg":
+            return rest[0]
+        self._open = False
+        if kind == "error":
+            raise RuntimeError(rest[0])
+        raise StopIteration
+
+    def close(self):
+        if self._open:
+            self._open = False
+            self._engine._conn.send(("cancel",))
+            while self._engine._recv()[0] not in ("end", "error"):
+                pass
 
 
 @dataclass(frozen=True)
@@ -408,18 +423,18 @@ class Job:
                 return {"error": "Choose at least one person"}
             model = source = opts.get("model") or "small"
             if model in THAI_MODELS:
-                missing = _missing_files(self.project.dir, model)
-                if len(missing) == len(MODEL_FILES):
+                state, missing = thai_model_state(self.project.dir, model)
+                if state == "missing":
                     return {"error": f"The {model} model is not installed yet. Run: python convert_model.py {model}"}
-                if missing:
+                if state == "incomplete":
                     return {"error": f"The {model} model is incomplete (missing {', '.join(missing)}). "
                                      f"Run again: python convert_model.py {model}"}
-                source = str(thai_model_dir(self.project.dir, model))
+                source = str(model_dir(self.project.dir, model))
             self._t0 = time.time()
             run = RunOptions(model, source, opts.get("language") or None, opts.get("device") == "cpu",
                              (opts.get("prompt") or "").strip())
             self._st = dict(running=True, cancel=False, phase="loading", message="Starting…", note="", error=None,
-                            recent=[], pos=0.0, dur=0.0, done=0.0, index=0, count=len(ids), who="", model=model)
+                            recent=[], pos=0.0, dur=0.0, audio_done=0.0, index=0, count=len(ids), who="", model=model)
             self._thread = threading.Thread(target=self._run, daemon=True, args=(ids, run))
             self._thread.start()
         return {"ok": True}
@@ -440,19 +455,21 @@ class Job:
                 sp = self.project.speaker(sid)
                 if not sp or self._cancelled:
                     break
-                self._set(phase="working", who=sp["name"], index=idx, count=len(ids), pos=0.0, done=done,
+                self._set(phase="working", who=sp["name"], index=idx, count=len(ids), pos=0.0, audio_done=done,
                           dur=sp.get("duration") or 0.0, message="")
                 for attempt in (0, 1):
                     try:
                         done += self._transcribe(engine, sid, sp["name"], run)
                         break
                     except Exception as e:
+                        if isinstance(e, EngineCrashed):
+                            self._engine = self._engine_key = None     # its process is gone; never reuse it
                         if engine.device == "cuda" and attempt == 0 and not self._cancelled:
                             self._set(note=f"The graphics card failed while working ({str(e)[:160]}). "
                                            "Switching to the processor, which is slower.")
                             self._engine_key = None
                             engine.use_cpu()
-                            self._engine_key = (run.source, True)
+                            self._engine, self._engine_key = engine, (run.source, True)
                             self._set(device=engine.device)
                             continue
                         raise
@@ -470,6 +487,12 @@ class Job:
             raise RuntimeError(f"the audio file for {name} is missing")
         self._set(message=f"Reading {name}'s audio…")
         dur, segments = engine.transcribe(a[0], run.language, run.prompt)
+        try:
+            return self._collect(engine, sid, name, run, dur, segments)
+        finally:
+            getattr(segments, "close", lambda: None)()
+
+    def _collect(self, engine, sid, name, run, dur, segments):
         self._set(dur=dur, message="")
         detected = "" if run.language else getattr(engine, "language", "")
         if not run.language:

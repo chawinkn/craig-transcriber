@@ -272,6 +272,8 @@ class ModelCatalogTest(unittest.TestCase):
         self.assertEqual({n: (m["thai"], m.get("state")) for n, m in catalog.items() if m["thai"]},
                          {"typhoon": (True, "installed"), "pathumma": (True, "incomplete")})
         self.assertNotIn("state", catalog["large-v3"])
+        self.assertEqual({n for n, m in catalog.items() if m["slow"]}, {"medium", "large-v3-turbo", "large-v3", "typhoon", "pathumma"})
+        self.assertEqual({m["default"]: n for n, m in catalog.items() if m.get("default")}, {"cpu": "small", "gpu": "large-v3"})
         self.assertTrue(all(m["label"] for m in catalog.values()))
 
     def test_missing_thai_model(self):
@@ -314,6 +316,9 @@ class ChildEngine:
     def transcribe(self, path, language, prompt):
         if self.model_name == "crash-always":
             os._exit(134)
+        if self.model_name == "crash-once" and not os.path.exists(path + ".crashed"):
+            open(path + ".crashed", "w").close()
+            os._exit(134)
         self.language = language or "th"
 
         def gen():
@@ -355,6 +360,11 @@ class ProcessEngineTest(unittest.TestCase):
         self.assertLess(time.time() - t, 1.0)
         again = next(engine.transcribe("a.wav", "th", "")[1])["text"]
         self.assertEqual((first.split()[1], again.split()[2:]), (again.split()[1], ["line", "0"]))
+
+    def test_closing_before_reading_still_leaves_the_pipe_clean(self):
+        engine = IsolatedEngine("slow", True, lambda **kw: None)
+        engine.transcribe("a.wav", "th", "")[1].close()
+        self.assertEqual(next(engine.transcribe("a.wav", "th", "")[1])["text"].split()[2:], ["line", "0"])
 
 
 class FakeEngine:
@@ -411,7 +421,7 @@ class JobTest(unittest.TestCase):
 
         class Watching(FakeEngine):
             def transcribe(self, path, language, prompt):
-                seen.append(FakeEngine.job.status()["done"])
+                seen.append(FakeEngine.job.status()["audio_done"])
                 return super().transcribe(path, language, prompt)
         job = Job(self.p, Watching)
         FakeEngine.job = job
@@ -501,6 +511,26 @@ class JobTest(unittest.TestCase):
         self.assertEqual((st["phase"], st["device"]), ("done", "cpu"), st.get("error"))
         self.assertIn("stopped unexpectedly", st["note"])
         self.assertTrue(all(t.startswith("cpu ") for _, t in texts(self.p)))
+
+    def test_after_a_crash_the_next_run_gets_a_fresh_engine(self):
+        job = Job(self.p, IsolatedEngine)
+        for want in ("error", "done"):
+            self.assertEqual(job.start({"speakers": [self.sid], "model": "crash-once", "device": "cpu"}), {"ok": True})
+            job._thread.join(10)
+            self.assertEqual(job.status()["phase"], want, job.status().get("error"))
+        self.assertTrue(all(t.startswith("cpu ") for _, t in texts(self.p)))
+
+    def test_cancel_with_the_child_process_keeps_old_lines_and_the_engine_usable(self):
+        job = Job(self.p, IsolatedEngine)
+        for cancel in (True, False):
+            self.assertEqual(job.start({"speakers": [self.sid], "model": "slow", "device": "cpu"}), {"ok": True})
+            while cancel and not job.status().get("recent"):
+                time.sleep(0.02)
+            if cancel:
+                job.cancel()
+            job._thread.join(10)
+            self.assertEqual(job.status()["phase"], "cancelled" if cancel else "done")
+            self.assertEqual(len(texts(self.p)), 1 if cancel else 40)
 
     def test_crash_on_the_processor_ends_the_run_with_an_error(self):
         st = self.run_job(IsolatedEngine, model="crash-always", device="cpu").status()

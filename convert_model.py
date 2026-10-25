@@ -5,12 +5,12 @@ Needs extra packages the app itself does not: pip install ctranslate2 transforme
 import argparse
 from pathlib import Path
 
-from transcribe import THAI_MODELS, thai_model_dir
+from transcribe import THAI_MODELS, model_dir
 
 
 def output_dir(model, data):
     """Where a converted model goes: a Thai model's own folder, or one named after any other repo."""
-    return thai_model_dir(Path(data).resolve(), model if model in THAI_MODELS else model.replace("/", "--"))
+    return model_dir(Path(data).resolve(), model if model in THAI_MODELS else model.replace("/", "--"))
 
 
 def main():
