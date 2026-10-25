@@ -124,6 +124,9 @@ The app walks you through four steps:
 
 You can also enter any other faster-whisper model name or Hugging Face repository under **Other model name**.
 
+> [!NOTE]
+> In a test on one-minute Thai clips, `pathumma` spelled clear speech best, with `typhoon` close behind and `large-v3` last. None of them read noisy speech over game audio well. Both Thai models return about a minute of speech as **one long line**, so reviewing line by line is harder; `large-v3` stays the default for that reason.
+
 ### Installing a Thai model
 
 The Thai models are not published in faster-whisper's format, so each one is converted once on your machine. The conversion needs extra packages that the app itself does not:

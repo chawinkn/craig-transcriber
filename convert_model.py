@@ -20,8 +20,11 @@ def main():
     from transformers import WhisperProcessor
     print(f"Downloading {repo} and converting it to {out} (several GB, this takes a while)…")
     TransformersConverter(repo, load_as_float16=True, low_cpu_mem_usage=True).convert(str(out), quantization="float16", force=True)
-    # faster-whisper needs tokenizer.json and preprocessor_config.json (128 mel bins); not every repo ships both.
-    WhisperProcessor.from_pretrained(repo).save_pretrained(str(out))
+    # faster-whisper needs tokenizer.json and preprocessor_config.json (128 mel bins); not every repo ships both,
+    # and transformers 5 folds the latter into processor_config.json when saving the processor as a whole.
+    processor = WhisperProcessor.from_pretrained(repo)
+    processor.tokenizer.save_pretrained(str(out))
+    processor.feature_extractor.save_pretrained(str(out))
     if args.model in THAI_MODELS:
         print(f"Done. Reload the app and choose the {args.model} model.")
     else:
