@@ -339,11 +339,27 @@ class JobTest(unittest.TestCase):
         self.assertEqual([t for _, t in texts(self.p)], ["hello", "world"])
         self.assertEqual(self.p.speaker(self.sid)["duration"], 4.0)
 
-    def test_success_records_model_and_language(self):
-        self.run_job(FakeEngine, language="th")
+    def test_success_records_the_run_options(self):
+        self.run_job(FakeEngine, language="th", prompt=" ขนุน, Go Fiber ")
         run = Project(self.p.dir).speaker(self.sid)["run"]
-        self.assertEqual((run["model"], run["language"]), ("m", "th"))
+        self.assertEqual({k: run[k] for k in ("model", "language", "vocabulary", "device")},
+                         {"model": "m", "language": "th", "vocabulary": "ขนุน, Go Fiber", "device": "cpu"})
         self.assertGreater(run["at"], 0)
+
+    def test_status_reports_audio_already_done_by_earlier_speakers(self):
+        upload(self.p, "2-b.wav", wav())
+        ids = [s["id"] for s in self.p.state()["speakers"]]
+        seen = []
+
+        class Watching(FakeEngine):
+            def transcribe(self, path, language, prompt):
+                seen.append(FakeEngine.job.status()["done"])
+                return super().transcribe(path, language, prompt)
+        job = Job(self.p, Watching)
+        FakeEngine.job = job
+        self.assertEqual(job.start({"speakers": ids, "model": "m"}), {"ok": True})
+        job._thread.join(10)
+        self.assertEqual(seen, [0.0, 4.0])
 
     def test_vocabulary_reaches_engine(self):
         got = []

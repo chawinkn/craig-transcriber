@@ -166,7 +166,7 @@ async function tick(){
     const frac=j.dur>0?Math.min(1,(j.index+j.pos/j.dur)/j.count):0;$('#jobBar').style.width=(j.phase==='loading'?3:frac*100)+'%';
     let t=j.message||'';
     if(j.phase==='working'){t=`Heard ${fmt(j.pos)}`+(j.dur?` of ${fmt(j.dur)}`:'')+` · ${fmt(j.elapsed)} elapsed · using the ${j.device==='cuda'?'graphics card':'processor'}`;
-      if(j.pos>20&&j.dur&&j.elapsed>10){const left=(j.dur-j.pos)*(j.elapsed/Math.max(1,j.index*j.dur+j.pos));t+=` · about ${fmt(left)} left for this person`}}
+      if(j.pos>20&&j.dur&&j.elapsed>10){const left=(j.dur-j.pos)*(j.elapsed/Math.max(1,(j.done||0)+j.pos));t+=` · about ${fmt(left)} left for this person`}}
     $('#jobText').textContent=t;$('#jobNote').textContent=j.note||'';
     $('#live').textContent='';for(const r of j.recent||[])$('#live').append(el('div',{},r));
   }else{

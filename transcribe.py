@@ -4,6 +4,7 @@ import re
 import threading
 import time
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 
 import project
@@ -232,6 +233,15 @@ class WhisperEngine:
                                       for s in segments)
 
 
+@dataclass(frozen=True)
+class RunOptions:
+    model: str           # what the user chose, as shown and saved
+    source: str          # what the engine loads: the same name, or a Thai model's folder
+    language: "str | None"
+    prefer_cpu: bool
+    prompt: str
+
+
 class Job:
     def __init__(self, project, engine_cls=WhisperEngine):
         self.project, self.engine_cls = project, engine_cls
@@ -287,35 +297,35 @@ class Job:
                                      f"Run again: python convert_model.py {model}"}
                 source = str(thai_model_dir(self.project.dir, model))
             self._t0 = time.time()
+            run = RunOptions(model, source, opts.get("language") or None, opts.get("device") == "cpu",
+                             (opts.get("prompt") or "").strip())
             self._st = dict(running=True, cancel=False, phase="loading", message="Starting…", note="", error=None,
-                            recent=[], pos=0.0, dur=0.0, index=0, count=len(ids), who="", model=model)
-            self._thread = threading.Thread(target=self._run, daemon=True, args=(
-                ids, source, opts.get("language") or None,
-                opts.get("device") == "cpu", (opts.get("prompt") or "").strip()))
+                            recent=[], pos=0.0, dur=0.0, done=0.0, index=0, count=len(ids), who="", model=model)
+            self._thread = threading.Thread(target=self._run, daemon=True, args=(ids, run))
             self._thread.start()
         return {"ok": True}
 
-    def _run(self, ids, model, language, prefer_cpu, prompt):
+    def _run(self, ids, run):
         t_start = time.time()
         try:
             self._set(phase="loading", message="Getting the model ready…")
-            key = (model, prefer_cpu)
+            key = (run.source, run.prefer_cpu)
             if self._engine_key != key:
                 self._engine = self._engine_key = None
-                self._engine = self.engine_cls(model, prefer_cpu, self._on_status)
+                self._engine = self.engine_cls(run.source, run.prefer_cpu, self._on_status)
                 self._engine_key = key
             engine = self._engine
             self._set(device=engine.device)
-            self._t0 = time.time()
+            self._t0, done = time.time(), 0.0
             for idx, sid in enumerate(ids):
                 sp = self.project.speaker(sid)
                 if not sp or self._cancelled:
                     break
-                self._set(phase="working", who=sp["name"], index=idx, count=len(ids), pos=0.0,
+                self._set(phase="working", who=sp["name"], index=idx, count=len(ids), pos=0.0, done=done,
                           dur=sp.get("duration") or 0.0, message="")
                 for attempt in (0, 1):
                     try:
-                        self._transcribe(engine, sid, sp["name"], language, prompt)
+                        done += self._transcribe(engine, sid, sp["name"], run)
                         break
                     except Exception as e:
                         if engine.device == "cuda" and attempt == 0 and not self._cancelled:
@@ -323,7 +333,7 @@ class Job:
                                            "Switching to the processor, which is slower.")
                             self._engine_key = None
                             engine.use_cpu()
-                            self._engine_key = (model, True)
+                            self._engine_key = (run.source, True)
                             self._set(device=engine.device)
                             continue
                         raise
@@ -333,28 +343,30 @@ class Job:
         finally:
             self._set(running=False)
 
-    def _transcribe(self, engine, sid, name, language, prompt):
-        """One person: collect their lines locally, and only a finished run replaces the old ones."""
+    def _transcribe(self, engine, sid, name, run):
+        """One person: collect their lines locally, and only a finished run replaces the old ones.
+        Returns the audio length, so the estimate can count what earlier speakers took."""
         a = self.project.audio(sid)
         if not a:
             raise RuntimeError(f"the audio file for {name} is missing")
         self._set(message=f"Reading {name}'s audio…")
-        dur, segments = engine.transcribe(a[0], language, prompt)
+        dur, segments = engine.transcribe(a[0], run.language, run.prompt)
         self._set(dur=dur, message="")
-        detected = "" if language else getattr(engine, "language", "")
-        if not language:
+        detected = "" if run.language else getattr(engine, "language", "")
+        if not run.language:
             self._set(detected=detected)
         kept = []
         for line in lines_from_segments(segments):
             if self._cancelled:
-                return                              # keep their previous lines
+                return dur                          # keep their previous lines
             self._set(pos=float(line["end"]))
             kept.append(line)
             with self._lock:
                 self._st["recent"] = (self._st["recent"] + [f"{name} [{project.hms(line['start'])}] {line['text']}"])[-4:]
         if not self._cancelled:
-            with self._lock:
-                run = {"model": self._st["model"], "language": language or "auto", "at": time.time()}
-            if not language:
-                run["detected"] = detected
-            self.project.replace_lines(sid, kept, dur, run)
+            record = {"model": run.model, "language": run.language or "auto", "vocabulary": run.prompt,
+                      "device": engine.device, "at": time.time()}
+            if not run.language:
+                record["detected"] = detected
+            self.project.replace_lines(sid, kept, dur, record)
+        return dur
