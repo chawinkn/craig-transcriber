@@ -24,6 +24,16 @@ def srt_time(t):
     return f"{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}:{ms % 60000 // 1000:02d},{ms % 1000:03d}"
 
 
+def review_flags(line):
+    """unsure: low confidence, or flagged as made up while still the model's text; mixed: Thai with English;
+    edited: the text differs from what the model wrote, which includes Lines typed in by hand."""
+    text, conf = line["text"], line.get("conf")
+    edited = text != line.get("orig", text)
+    return {"edited": edited,
+            "unsure": (bool(line.get("suspect")) and not edited) or (conf is not None and conf < -0.9),
+            "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2}
+
+
 def speaker_name_from(filename):
     stem = Path(filename).stem
     return re.sub(r"^\d+[-_ ]+", "", stem) or stem          # Craig names files "1-name.flac"
@@ -79,10 +89,13 @@ class Project:
         return sorted(self._p["lines"], key=lambda l: (l["start"], order.get(l["spk"], 0)))
 
     def state(self):
-        """Speakers carry "touched": a line of theirs was reviewed, retyped or deleted since the model wrote it."""
+        """Each Line carries its review flags; a Speaker is "touched" when a Line of theirs was reviewed,
+        edited or deleted since the model wrote it."""
         with self._lock:
             st = copy.deepcopy({"speakers": self._p["speakers"], "lines": self._sorted_lines()})
-        touched = {l["spk"] for l in st["lines"] if l["ok"] or l["text"] != l.get("orig", l["text"])}
+        for l in st["lines"]:
+            l.update(review_flags(l))
+        touched = {l["spk"] for l in st["lines"] if l["ok"] or l["edited"]}
         for sp in st["speakers"]:
             sp["touched"] = sp["id"] in touched or bool(sp.pop("deleted_by_hand", False))
         return st
