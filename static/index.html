@@ -124,6 +124,9 @@ function upload(files){
     x.onerror=()=>{$('#upMsg').textContent='⚠ Could not send '+f.name;res()};
     x.send(f)})),Promise.resolve()).then(async()=>{await refresh();S.speakers.forEach(s=>picks.set(s.id,true));renderPeople()});
 }
+function runText(r){
+  const lang=r.language==='auto'?`auto (${r.detected||'?'})`:r.language;
+  return [r.model.split(/[\\/]/).pop(),lang,new Date(r.at*1000).toLocaleDateString(undefined,{day:'numeric',month:'short'})].join(' · ')}
 function renderPeople(){
   const box=$('#people');box.textContent='';
   if(!S.speakers.length){box.append(el('p',{class:'muted small'},'No recordings yet.'));return}
@@ -135,6 +138,7 @@ function renderPeople(){
     box.append(el('div',{class:'person'},el('span',{class:'dot',style:'background:'+col(sp.id)}),nm,
       el('span',{class:'small muted'},sp.duration?fmt(sp.duration):'length unknown'),
       el('span',{class:'pill'+(n?' ok':'')},n?`${n} lines`:'no transcript yet'),
+      n&&sp.run?el('span',{class:'small muted',title:'Settings of the run that produced these lines'},runText(sp.run)):null,
       el('label',{class:'small'},pk,' transcribe'),
       el('button',{onclick:async()=>{if(confirm('Remove '+sp.name+' and their lines?')){await api('/api/speaker/remove',{id:sp.id});refresh()}}},'Remove')));
   }
@@ -143,7 +147,8 @@ function renderPeople(){
 $('#go').onclick=async()=>{
   const ids=[...document.querySelectorAll('[data-pick]')].filter(c=>c.checked).map(c=>c.dataset.pick);
   if(!ids.length){$('#goHint').textContent=S.speakers.length?'Tick at least one person first.':'Add a recording first (step 1).';return}
-  const redo=S.speakers.filter(s=>ids.includes(s.id)&&S.lines.some(l=>l.spk===s.id&&l.ok)).map(s=>s.name);
+  await refresh();
+  const redo=S.speakers.filter(s=>ids.includes(s.id)&&s.touched).map(s=>s.name);
   if(redo.length&&!confirm(`Transcribing ${redo.join(', ')} again replaces their lines, including your fixes and reviewed ticks. Continue?`))return;
   $('#goHint').textContent='';$('#jobEnd').textContent='';
   try{await api('/api/transcribe',{speakers:ids,model:$('#custom').value.trim()||$('#model').value,language:$('#lang').value,device:$('#device').value,prompt:$('#prompt').value});poll()}
@@ -177,7 +182,7 @@ async function tick(){
 }
 
 const hasThai=s=>/[฀-๿]/.test(s), hasLatin=s=>(s.match(/[A-Za-z]/g)||[]).length>=2;
-const mixed=l=>hasThai(l.text)&&hasLatin(l.text), unsure=l=>l.conf!=null&&l.conf<-0.9;
+const mixed=l=>hasThai(l.text)&&hasLatin(l.text), unsure=l=>l.suspect||(l.conf!=null&&l.conf<-0.9);
 const pend=new Map();let saveT=null;
 function queue(id,patch){pend.set(id,Object.assign(pend.get(id)||{id},patch));$('#saveState').textContent='Saving…';clearTimeout(saveT);saveT=setTimeout(flush,600)}
 async function flush(){const u=[...pend.values()];pend.clear();if(!u.length)return;try{await api('/api/lines',{updates:u});$('#saveState').textContent='Saved ✓'}catch(e){$('#saveState').textContent='⚠ Not saved: '+e.message}}

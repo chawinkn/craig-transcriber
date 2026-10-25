@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 import time
 import traceback
@@ -47,6 +48,13 @@ def installed_thai_models(data_dir):
     """{name: folder} for the Thai models convert_model.py has written under <data_dir>/models."""
     dirs = {name: Path(data_dir) / "models" / name for name in THAI_MODELS}
     return {name: str(d) for name, d in dirs.items() if (d / "model.bin").exists()}
+
+
+def looks_hallucinated(text):
+    """A phrase repeated four or more times in a row, or letters that are neither Thai nor Latin."""
+    if re.search(r"(.{2,}?)\1{3,}", re.sub(r"\s+", "", text)):
+        return True
+    return any(ch.isalpha() and not ("฀" <= ch <= "๿" or ch <= "ɏ") for ch in text)
 
 
 class WhisperEngine:
@@ -109,7 +117,9 @@ class WhisperEngine:
         segments, info = self._model.transcribe(
             audio, language=language or None, beam_size=5, vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500), condition_on_previous_text=False,
-            initial_prompt=prompt or None)
+            initial_prompt=prompt or None, hotwords=prompt or None,
+            # PONYTAIL: thresholds not yet tuned on real noisy Thai audio; revisit with issue #5's comparison.
+            word_timestamps=True, hallucination_silence_threshold=2.0, no_repeat_ngram_size=10)
         self.language = getattr(info, "language", "")
         return len(audio) / 16000.0, ({"start": float(s.start), "end": float(s.end), "text": s.text,
                                        "conf": getattr(s, "avg_logprob", None),
@@ -231,8 +241,11 @@ class Job:
             text, conf = seg["text"].strip(), seg.get("conf")
             if not text or ((seg.get("no_speech") or 0) > 0.8 and conf is not None and conf < -1.0):
                 continue
-            kept.append({**seg, "text": text})
+            kept.append({**seg, "text": text, "suspect": looks_hallucinated(text)})
             with self._lock:
                 self._st["recent"] = (self._st["recent"] + [f"{name} [{project.hms(seg['start'])}] {text}"])[-4:]
         if not self._cancelled:
-            self.project.replace_lines(sid, kept, dur)
+            run = {"model": self._st["model"], "language": language or "auto", "at": time.time()}
+            if not language:
+                run["detected"] = getattr(engine, "language", "")
+            self.project.replace_lines(sid, kept, dur, run)
