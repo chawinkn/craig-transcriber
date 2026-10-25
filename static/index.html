@@ -94,7 +94,7 @@ const fmt=t=>{if(!isFinite(t))return '—';t=Math.max(0,Math.floor(t));const h=M
 async function api(path,body){const r=await fetch(path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const j=await r.json().catch(()=>({error:'Bad reply'}));if(!r.ok||j.error)throw new Error(j.error||r.statusText);return j}
 function el(tag,attrs={},...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else e.setAttribute(k,v)}for(const c of kids.flat())if(c!=null)e.append(c);return e}
 
-const MODELS=[['small','Balanced (small, 0.5 GB)'],['medium','Better (medium, 1.5 GB)'],['large-v3-turbo','Fast and good (turbo, 1.6 GB)'],['large-v3','Most accurate (large-v3, 3 GB)']];
+const MODELS=[['small','Balanced (small, 0.5 GB)'],['medium','Better (medium, 1.5 GB)'],['large-v3-turbo','Fast and good (turbo, 1.6 GB)'],['large-v3','Most accurate (large-v3, 3 GB)'],['typhoon','Thai, most accurate (Typhoon large-v3, 3 GB)'],['pathumma','Thai, noisy audio (Pathumma noise, 3 GB)']];
 function renderEnv(){
   const e=S.env, b=$('#envBox'); b.textContent='';
   if(!e.engine) b.append(el('div',{class:'box bad'},el('b',{},'The transcription engine is not installed. '),'Open a terminal, run ',el('code',{},'pip install faster-whisper'),', then start this program again.'));
@@ -103,7 +103,11 @@ function renderEnv(){
     el('details',{},el('summary',{},'I have an NVIDIA card. Why was it not found?'),el('p',{class:'small'},'Update your NVIDIA driver, then run: ',el('code',{},'pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"'),' and start this program again. It needs a card that supports CUDA 12 (most GeForce cards from the last several years do).'))));
   const sel=$('#model'); if(!sel.options.length){for(const[v,t]of MODELS)sel.append(el('option',{value:v},t));sel.value=e.cuda>0?'large-v3':'small'; updateModelHint()}
 }
-function updateModelHint(){const v=$('#model').value,gpu=S.env.cuda>0;$('#modelHint').textContent=(!gpu&&/large|medium/.test(v))?'This quality is very slow without a graphics card.':''}
+function updateModelHint(){
+  const v=$('#model').value,gpu=S.env.cuda>0,thai=v==='typhoon'||v==='pathumma',h=[];
+  if(!gpu&&(thai||/large|medium/.test(v)))h.push('This quality is very slow without a graphics card.');
+  if(thai)h.push('Thai only, so set Language to Thai.',(S.env.thai||[]).includes(v)?'':`Not installed yet: run python convert_model.py ${v}, then reload this page.`);
+  $('#modelHint').textContent=h.join(' ').trim()}
 $('#model').onchange=updateModelHint;
 
 $('#pick').onclick=()=>$('#file').click();

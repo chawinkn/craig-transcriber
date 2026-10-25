@@ -119,8 +119,27 @@ The app walks you through four steps:
 | `medium` | ~1.5 GB | Better; slow on a CPU |
 | `large-v3-turbo` | ~1.6 GB | Several times faster than `large-v3`; accuracy varies by language |
 | `large-v3` | ~3 GB | Most accurate; default with a GPU; fits in ~6 GB of VRAM |
+| `typhoon` | ~6 GB to install, ~3 GB after | Thai only: [Typhoon Whisper Large v3](https://huggingface.co/typhoon-ai/typhoon-whisper-large-v3), tuned for accuracy |
+| `pathumma` | ~3 GB | Thai only: [Pathumma Whisper Large v3, noise fine-tuned](https://huggingface.co/PogusTheWhisper/Pathumma-whisper-th-large-v3-natural-noise-finetuned), for casual speech with background noise |
 
 You can also enter any other faster-whisper model name or Hugging Face repository under **Other model name**.
+
+### Installing a Thai model
+
+The Thai models are not published in faster-whisper's format, so each one is converted once on your machine. The conversion needs extra packages that the app itself does not:
+
+```bash
+pip install ctranslate2 transformers torch
+python convert_model.py typhoon     # or: pathumma
+```
+
+The model is written to `craig_work/models/<name>/` (use `--data` if you run `main.py` with another folder). Until then, choosing it shows this command and the run will not start. Set **Language spoken** to Thai when you use one. `convert_model.py` also takes any Hugging Face Whisper repository id and prints the folder to enter under **Other model name**.
+
+With Docker, convert on the host, then add the folder to `docker run`:
+
+```bash
+docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v craig_data:/data -v "$PWD/craig_work/models:/data/work/models:ro" craig-transcriber
+```
 
 > [!NOTE]
 > Each person's track is transcribed separately and spans the whole recording, though silence is skipped. Total time grows with both the meeting length and the number of people. Without a GPU, the large models take hours for a long meeting.
@@ -138,6 +157,7 @@ python3 test_app.py   # stdlib unittest; no model or GPU needed
 | `transcribe.py` | `WhisperEngine` (model loading, audio decoding) and `Job` (the background transcription job) |
 | `server.py` | HTTP handler: JSON API, audio streaming with Range support, the page |
 | `static/index.html` | The whole frontend, with no build step |
+| `convert_model.py` | Optional one-time installer for the Thai models; not imported by the app |
 
 `static/index.html` is re-read on every request, so HTML edits need only a browser reload. Python edits need a restart.
 

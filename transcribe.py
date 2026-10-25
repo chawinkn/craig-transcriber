@@ -39,6 +39,16 @@ def cuda_count():
         return 0
 
 
+THAI_MODELS = {"typhoon": "typhoon-ai/typhoon-whisper-large-v3",
+               "pathumma": "PogusTheWhisper/Pathumma-whisper-th-large-v3-natural-noise-finetuned"}
+
+
+def installed_thai_models(data_dir):
+    """{name: folder} for the Thai models convert_model.py has written under <data_dir>/models."""
+    dirs = {name: Path(data_dir) / "models" / name for name in THAI_MODELS}
+    return {name: str(d) for name, d in dirs.items() if (d / "model.bin").exists()}
+
+
 class WhisperEngine:
     def __init__(self, model_name, prefer_cpu, on_status):
         self.model_name = model_name
@@ -151,12 +161,16 @@ class Job:
             ids = [i for i in opts.get("speakers", []) if self.project.speaker(i)]
             if not ids:
                 return {"error": "Choose at least one person"}
+            model = source = opts.get("model") or "small"
+            if model in THAI_MODELS:
+                source = installed_thai_models(self.project.dir).get(model)
+                if not source:
+                    return {"error": f"The {model} model is not installed yet. Run: python convert_model.py {model}"}
             self._t0 = time.time()
             self._st = dict(running=True, cancel=False, phase="loading", message="Starting…", note="", error=None,
-                            recent=[], pos=0.0, dur=0.0, index=0, count=len(ids), who="",
-                            model=opts.get("model", "small"))
+                            recent=[], pos=0.0, dur=0.0, index=0, count=len(ids), who="", model=model)
             self._thread = threading.Thread(target=self._run, daemon=True, args=(
-                ids, opts.get("model") or "small", opts.get("language") or None,
+                ids, source, opts.get("language") or None,
                 opts.get("device") == "cpu", (opts.get("prompt") or "").strip()))
             self._thread.start()
         return {"ok": True}
