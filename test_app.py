@@ -212,6 +212,24 @@ class JobTest(unittest.TestCase):
         self.assertEqual(Job(self.p, FakeEngine).start({"speakers": ["nope"]}), {"error": "Choose at least one person"})
         self.assertEqual(Job(self.p, FakeEngine).status(), {})
 
+    def test_thai_model_must_be_installed(self):
+        err = Job(self.p, FakeEngine).start({"speakers": [self.sid], "model": "typhoon"})["error"]
+        self.assertIn("python convert_model.py typhoon", err)
+        folder = self.p.dir / "models" / "typhoon"
+        folder.mkdir(parents=True)
+        (folder / "model.bin").write_bytes(b"")
+        loaded = []
+
+        class Recording(FakeEngine):
+            def __init__(self, model_name, *a):
+                loaded.append(model_name)
+                super().__init__(model_name, *a)
+        job = Job(self.p, Recording)
+        self.assertEqual(job.start({"speakers": [self.sid], "model": "typhoon"}), {"ok": True})
+        job._thread.join(10)
+        self.assertEqual(loaded, [str(folder)])
+        self.assertEqual(job.status()["model"], "typhoon")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -78,7 +78,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/":
                 return self.send_bytes(200, (Path(__file__).parent / "static" / "index.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/api/state":
-                env = {"engine": self.job.engine_cls.available(), "cuda": transcribe.cuda_count(), "py": sys.version.split()[0]}
+                env = {"engine": self.job.engine_cls.available(), "cuda": transcribe.cuda_count(), "py": sys.version.split()[0],
+                       "thai": list(transcribe.installed_thai_models(self.project.dir))}
                 return self.send_json({**self.project.state(), "env": env})
             if u.path == "/api/status":
                 return self.send_json(self.job.status())
