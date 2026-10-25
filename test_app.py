@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 from project import Project
-from transcribe import Job
+from transcribe import Job, WhisperEngine, looks_hallucinated
 
 
 def wav(seconds=0.2):
@@ -95,6 +95,28 @@ class ProjectTest(unittest.TestCase):
         self.p.replace_lines("gone", [seg(0, "x")])
         self.assertEqual(len(self.p.state()["lines"]), 2)
 
+    def test_touched_speakers_are_reported(self):
+        a, b = self.two()
+        touched = lambda: {s["id"]: s["touched"] for s in self.p.state()["speakers"]}
+        self.assertEqual(touched(), {a: False, b: False})
+        la, lb = [l["id"] for l in self.p.state()["lines"] if l["text"] in ("hello", "other")]
+        self.p.edit_lines([{"id": la, "text": "hello there"}, {"id": lb, "ok": True}])
+        self.assertEqual(touched(), {a: True, b: True})
+        self.p.edit_lines([{"id": la, "text": "hello"}, {"id": lb, "ok": False}])
+        self.assertEqual(touched(), {a: False, b: False})
+        self.p.edit_lines([{"id": self.p.add_line_after(lb)["id"], "text": "added by hand"}])
+        self.assertEqual(touched(), {a: False, b: True})
+        self.p.delete_line([l["id"] for l in self.p.state()["lines"] if l["text"] == "world"][0])
+        self.assertEqual(touched(), {a: True, b: True})
+        self.p.replace_lines(a, [seg(0, "fresh")])
+        self.assertEqual(touched(), {a: False, b: True})
+
+    def test_run_record_is_cleared_with_the_last_line(self):
+        a, _ = self.two()
+        self.p.replace_lines(a, [seg(0, "only")], run={"model": "m", "language": "th", "at": 1.0})
+        self.p.delete_line(next(l["id"] for l in self.p.state()["lines"] if l["spk"] == a))
+        self.assertNotIn("run", Project(self.dir).speaker(a))
+
     def test_reset_keeps_unrelated_files(self):
         self.two()
         (self.dir / "keep.txt").write_text("mine")
@@ -124,6 +146,53 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(Project(self.dir).state()["lines"], [])
 
 
+class HallucinationRuleTest(unittest.TestCase):
+    def test_flags_repeats_and_foreign_scripts(self):
+        for text in ["แก ร ั ติ เลย อี เข ีย บ อี เข ีย บ อี เข ีย บ ไม่ ทัน พอ เล่น", "อีเขียบ อีเขียบ อีเขียบ",
+                     "además habíaон", "складดิงตรงนี้", "เออ ตอนนี้一點ก็เดี๋ยว", "Mike is cursing too, Γειά"]:
+            self.assertTrue(looks_hallucinated(text), text)
+
+    def test_keeps_normal_thai_english_and_mixed(self):
+        for text in ["เรียนแพทย์ดีกว่า", "No Way", "KMIT Open Courtware", "Essential Principal เลยนะเว้ย",
+                     "อ่า ฮ่า ฮ่า ฮ่า", "เล่นๆ ตอนข้าง ตรงชีพหว่ะ", "เสียไป ๆ บางเมื่อ ๆ ๆ เยอะ ๆ", "เล่มละพัน 1,000 บาท?",
+                     "Sami in år 2000", "Tiếng Việt", "นะนะนะนะนะ", "ไม่ไม่ไม่ไม่", "ฮ่าฮ่าฮ่าฮ่า", "ha ha ha ha",
+                     "555555555", "1000000000"]:
+            self.assertFalse(looks_hallucinated(text), text)
+
+
+class WhisperEngineTest(unittest.TestCase):
+    def engine(self):
+        calls = []
+
+        class Model:
+            def transcribe(self, audio, **kw):
+                calls.append(kw)
+                s = type("S", (), {"start": 0.0, "end": 1.0, "text": " hi", "avg_logprob": -0.2, "no_speech_prob": 0.1})
+                return iter([s]), type("Info", (), {"language": "th"})
+
+        class Engine(WhisperEngine):
+            load_audio = staticmethod(lambda path: [0.0] * 32000)
+
+            def _load(self, prefer_cpu):
+                self._model, self.device = Model(), "cpu"
+        return Engine("m", True, lambda **kw: None), calls
+
+    def test_vocabulary_is_prompt_and_hotwords_and_loops_are_guarded(self):
+        engine, calls = self.engine()
+        dur, segs = engine.transcribe("a.wav", "th", "ขนุน, Go Fiber")
+        self.assertEqual((dur, list(segs)[0]["text"], engine.language), (2.0, " hi", "th"))
+        kw = calls[0]
+        self.assertEqual((kw["language"], kw["initial_prompt"], kw["hotwords"]), ("th", "ขนุน, Go Fiber", "ขนุน, Go Fiber"))
+        self.assertTrue(kw["word_timestamps"])
+        self.assertGreater(kw["hallucination_silence_threshold"], 0)
+        self.assertGreater(kw["no_repeat_ngram_size"], 0)
+
+    def test_no_vocabulary_sends_no_hotwords(self):
+        engine, calls = self.engine()
+        list(engine.transcribe("a.wav", None, "")[1])
+        self.assertEqual((calls[0]["language"], calls[0]["initial_prompt"], calls[0]["hotwords"]), (None, None, None))
+
+
 class FakeEngine:
     segments = [seg(0, " hello "), seg(1, ""), seg(2, "noise", conf=-1.5, no_speech=0.9), seg(3, "world")]
     job = None
@@ -148,10 +217,10 @@ class JobTest(unittest.TestCase):
         self.sid = self.p.state()["speakers"][0]["id"]
         self.p.replace_lines(self.sid, [seg(0, "old")])
 
-    def run_job(self, engine_cls):
+    def run_job(self, engine_cls, **opts):
         job = Job(self.p, engine_cls)
         FakeEngine.job = job
-        self.assertEqual(job.start({"speakers": [self.sid], "model": "m"}), {"ok": True})
+        self.assertEqual(job.start({"speakers": [self.sid], "model": "m", **opts}), {"ok": True})
         job._thread.join(10)
         return job
 
@@ -164,6 +233,46 @@ class JobTest(unittest.TestCase):
         self.assertEqual([t for _, t in texts(self.p)], ["hello", "world"])
         self.assertEqual(self.p.speaker(self.sid)["duration"], 4.0)
 
+    def test_success_records_model_and_language(self):
+        self.run_job(FakeEngine, language="th")
+        run = Project(self.p.dir).speaker(self.sid)["run"]
+        self.assertEqual((run["model"], run["language"]), ("m", "th"))
+        self.assertGreater(run["at"], 0)
+
+    def test_vocabulary_reaches_engine(self):
+        got = []
+
+        class Listening(FakeEngine):
+            def transcribe(self, path, language, prompt):
+                got.append((language, prompt))
+                return super().transcribe(path, language, prompt)
+        self.run_job(Listening, language="th", prompt="  ขนุน, Go Fiber ")
+        self.assertEqual(got, [("th", "ขนุน, Go Fiber")])
+
+    def test_hallucinated_lines_are_kept_and_flagged(self):
+        class Noisy(FakeEngine):
+            segments = [seg(0, "สวัสดี"), seg(1, "อีเขียบ อีเขียบ อีเขียบ อีเขียบ"), seg(2, "además habíaон")]
+        self.run_job(Noisy)
+        lines = Project(self.p.dir).state()["lines"]
+        self.assertEqual([(l["text"], l["suspect"]) for l in lines],
+                         [("สวัสดี", False), ("อีเขียบ อีเขียบ อีเขียบ อีเขียบ", True), ("además habíaон", True)])
+
+    def test_failed_or_cancelled_run_keeps_previous_record(self):
+        self.run_job(FakeEngine, language="th")
+        before = self.p.speaker(self.sid)["run"]
+
+        class Boom(FakeEngine):
+            def transcribe(self, path, language, prompt):
+                raise RuntimeError("boom")
+
+        class Cancelling(FakeEngine):
+            def transcribe(self, path, language, prompt):
+                FakeEngine.job.cancel()
+                return super().transcribe(path, language, prompt)
+        for engine_cls in (Boom, Cancelling):
+            self.run_job(engine_cls, language="en")
+            self.assertEqual(self.p.speaker(self.sid)["run"], before)
+
     def test_failure_keeps_old_lines(self):
         class Boom(FakeEngine):
             def transcribe(self, path, language, prompt):
@@ -175,6 +284,7 @@ class JobTest(unittest.TestCase):
         self.assertEqual(st["phase"], "error")
         self.assertIn("boom", st["error"])
         self.assertEqual([t for _, t in texts(self.p)], ["old"])
+        self.assertNotIn("run", self.p.speaker(self.sid))
 
     def test_cancel_keeps_old_lines(self):
         class Cancelling(FakeEngine):
