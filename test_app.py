@@ -1,6 +1,8 @@
 import io
 import json
+import os
 import tempfile
+import time
 import unittest
 import wave
 import zipfile
@@ -8,7 +10,7 @@ from pathlib import Path
 
 from project import Project
 import convert_model
-from transcribe import MODEL_FILES, Job, WhisperEngine, lines_from_segments, looks_hallucinated, model_catalog
+from transcribe import MODEL_FILES, Job, ProcessEngine, WhisperEngine, lines_from_segments, looks_hallucinated, model_catalog
 
 
 def wav(seconds=0.2):
@@ -299,6 +301,62 @@ class WhisperEngineTest(unittest.TestCase):
         self.assertEqual(list(segs)[0]["words"], [{"start": 0.0, "end": 0.5, "text": " hi", "prob": 0.9}])
 
 
+class ChildEngine:
+    """Runs inside the child process of ProcessEngine; some model names crash it the way a CUDA abort does."""
+    available = staticmethod(lambda: True)
+
+    def __init__(self, model_name, prefer_cpu, on_status):
+        if model_name == "crash-on-load" and not prefer_cpu:
+            os._exit(134)
+        self.model_name, self.device, self.language = model_name, "cpu" if prefer_cpu else "cuda", ""
+        on_status(message=f"loaded on {self.device}")
+
+    def transcribe(self, path, language, prompt):
+        if self.model_name == "crash-always":
+            os._exit(134)
+        self.language = language or "th"
+
+        def gen():
+            for i in range(40 if self.model_name == "slow" else 2):
+                if self.model_name == "crash-mid-run" and self.device == "cuda" and i == 1:
+                    os._exit(134)
+                if self.model_name == "slow":
+                    time.sleep(0.05)
+                yield {**seg(i, f"{self.device} {os.getpid()} line {i}"), "words": []}
+        return 4.0, gen()
+
+
+class IsolatedEngine(ProcessEngine):
+    INNER = ChildEngine
+
+
+class ProcessEngineTest(unittest.TestCase):
+    def test_runs_in_a_child_process_and_streams_segments(self):
+        notes = []
+        engine = IsolatedEngine("ok", False, lambda **kw: notes.append(kw))
+        dur, segs = engine.transcribe("a.wav", None, "")
+        texts = [s["text"] for s in segs]
+        self.assertEqual((dur, engine.device, engine.language, len(texts)), (4.0, "cuda", "th", 2))
+        self.assertNotEqual(texts[0].split()[1], str(os.getpid()))
+        self.assertIn({"message": "loaded on cuda"}, notes)
+
+    def test_crash_while_loading_on_the_gpu_retries_on_the_processor(self):
+        notes = []
+        engine = IsolatedEngine("crash-on-load", False, lambda **kw: notes.append(kw))
+        self.assertEqual(engine.device, "cpu")
+        self.assertTrue(any("graphics card" in n.get("note", "") for n in notes))
+
+    def test_cancel_stops_the_child_and_the_same_process_serves_the_next_run(self):
+        engine = IsolatedEngine("slow", True, lambda **kw: None)
+        segs = engine.transcribe("a.wav", "th", "")[1]
+        first = next(segs)["text"]
+        t = time.time()
+        segs.close()
+        self.assertLess(time.time() - t, 1.0)
+        again = next(engine.transcribe("a.wav", "th", "")[1])["text"]
+        self.assertEqual((first.split()[1], again.split()[2:]), (again.split()[1], ["line", "0"]))
+
+
 class FakeEngine:
     segments = [seg(0, " hello "), seg(1, ""), seg(2, "noise", conf=-1.5, no_speech=0.9), seg(3, "world")]
     job = None
@@ -436,6 +494,19 @@ class JobTest(unittest.TestCase):
         self.assertEqual((st["phase"], st["device"]), ("done", "cpu"))
         self.assertIn("cuda died", st["note"])
         self.assertEqual([t for _, t in texts(self.p)], ["hello", "world"])
+
+    def test_crash_mid_run_on_the_gpu_finishes_on_the_processor(self):
+        job = self.run_job(IsolatedEngine, model="crash-mid-run")
+        st = job.status()
+        self.assertEqual((st["phase"], st["device"]), ("done", "cpu"), st.get("error"))
+        self.assertIn("stopped unexpectedly", st["note"])
+        self.assertTrue(all(t.startswith("cpu ") for _, t in texts(self.p)))
+
+    def test_crash_on_the_processor_ends_the_run_with_an_error(self):
+        st = self.run_job(IsolatedEngine, model="crash-always", device="cpu").status()
+        self.assertEqual(st["phase"], "error")
+        self.assertIn("stopped unexpectedly", st["error"])
+        self.assertEqual([t for _, t in texts(self.p)], ["old"])
 
     def test_start_validation(self):
         class Missing(FakeEngine):

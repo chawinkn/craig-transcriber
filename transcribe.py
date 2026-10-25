@@ -1,9 +1,11 @@
 import math
+import multiprocessing
 import os
 import re
 import threading
 import time
 import traceback
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -233,6 +235,123 @@ class WhisperEngine:
                                       for s in segments)
 
 
+def _engine_worker(conn, inner, model_name, prefer_cpu):
+    """Child process: own the inner engine and answer transcribe requests, streaming segments back."""
+    add_nvidia_dll_dirs()
+    try:
+        engine = inner(model_name, prefer_cpu, lambda **kw: conn.send(("status", kw)))
+    except Exception as e:
+        conn.send(("failed", f"{type(e).__name__}: {e}"))
+        return
+    conn.send(("ready", engine.device))
+    while True:
+        try:
+            msg = conn.recv()
+        except EOFError:
+            return
+        if msg[0] != "transcribe":
+            continue                                # a cancel that arrived after the run had already ended
+        try:
+            dur, segments = engine.transcribe(*msg[1:])
+            conn.send(("start", dur, getattr(engine, "language", "")))
+            for seg in segments:
+                if conn.poll() and conn.recv()[0] == "cancel":
+                    break
+                conn.send(("seg", seg))
+            conn.send(("end",))
+        except Exception as e:
+            conn.send(("error", f"{type(e).__name__}: {e}"))
+
+
+def _stop_child(proc, conn):
+    conn.close()
+    proc.terminate()
+    proc.join(5)
+
+
+class EngineCrashed(RuntimeError):
+    pass
+
+
+class ProcessEngine:
+    """The engine interface with INNER running in a child process, so a native crash there (a CUDA abort)
+    becomes an error here instead of killing the server. The child, and its loaded model, lives as long as this."""
+    INNER = WhisperEngine
+
+    @classmethod
+    def available(cls):
+        return cls.INNER.available()
+
+    def __init__(self, model_name, prefer_cpu, on_status):
+        self.model_name, self.on_status, self.language, self.device = model_name, on_status, "", None
+        try:
+            self._start(prefer_cpu)
+        except EngineCrashed:
+            if prefer_cpu:
+                raise
+            on_status(note="The graphics card crashed while loading the model. Trying the processor, which is slower.")
+            self._start(True)
+
+    def _start(self, prefer_cpu):
+        ctx = multiprocessing.get_context("spawn")
+        self._conn, child = ctx.Pipe()
+        self._proc = ctx.Process(target=_engine_worker, args=(child, self.INNER, self.model_name, prefer_cpu),
+                                 daemon=True)
+        self._proc.start()
+        child.close()
+        self._stop = weakref.finalize(self, _stop_child, self._proc, self._conn)
+        kind, rest = self._recv()
+        if kind == "failed":
+            raise RuntimeError(rest[0])
+        self.device = rest[0]
+
+    def _recv(self):
+        """Next message other than a status update, which goes straight to on_status."""
+        while True:
+            try:
+                kind, *rest = self._conn.recv()
+            except (EOFError, OSError):
+                self._proc.join(5)
+                raise EngineCrashed(f"the transcription process stopped unexpectedly "
+                                    f"(exit code {self._proc.exitcode})") from None
+            if kind != "status":
+                return kind, rest
+            self.on_status(**rest[0])
+
+    def use_cpu(self):
+        self._stop()
+        self._start(True)
+
+    def transcribe(self, audio_path, language, prompt):
+        self._conn.send(("transcribe", str(audio_path), language, prompt))
+        kind, rest = self._recv()
+        if kind == "error":
+            raise RuntimeError(rest[0])
+        dur, self.language = rest
+        return dur, self._segments()
+
+    def _segments(self):
+        finished = False
+        try:
+            while True:
+                kind, rest = self._recv()
+                if kind == "seg":
+                    yield rest[0]
+                    continue
+                finished = True
+                if kind == "error":
+                    raise RuntimeError(rest[0])
+                return
+        except EngineCrashed:
+            finished = True
+            raise
+        finally:
+            if not finished:                        # closed early (cancel): stop the child's run and drain it
+                self._conn.send(("cancel",))
+                while self._recv()[0] not in ("end", "error"):
+                    pass
+
+
 @dataclass(frozen=True)
 class RunOptions:
     model: str           # what the user chose, as shown and saved
@@ -243,7 +362,7 @@ class RunOptions:
 
 
 class Job:
-    def __init__(self, project, engine_cls=WhisperEngine):
+    def __init__(self, project, engine_cls=ProcessEngine):
         self.project, self.engine_cls = project, engine_cls
         self._lock = threading.Lock()
         self._st = {}
