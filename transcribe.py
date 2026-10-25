@@ -41,14 +41,37 @@ def cuda_count():
         return 0
 
 
-THAI_MODELS = {"typhoon": "typhoon-ai/typhoon-whisper-large-v3",
-               "pathumma": "PogusTheWhisper/Pathumma-whisper-th-large-v3-natural-noise-finetuned"}
+MODELS = [{"name": "small", "label": "Balanced (small, 0.5 GB)"},
+          {"name": "medium", "label": "Better (medium, 1.5 GB)"},
+          {"name": "large-v3-turbo", "label": "Fast and good (turbo, 1.6 GB)"},
+          {"name": "large-v3", "label": "Most accurate (large-v3, 3 GB)"},
+          {"name": "typhoon", "label": "Thai, most accurate (Typhoon large-v3, 3 GB)",
+           "repo": "typhoon-ai/typhoon-whisper-large-v3"},
+          {"name": "pathumma", "label": "Thai, noisy audio (Pathumma noise, 3 GB)",
+           "repo": "PogusTheWhisper/Pathumma-whisper-th-large-v3-natural-noise-finetuned"}]
+THAI_MODELS = {m["name"]: m["repo"] for m in MODELS if "repo" in m}
+MODEL_FILES = ("model.bin", "config.json", "tokenizer.json", "preprocessor_config.json")   # what faster-whisper reads
 
 
-def installed_thai_models(data_dir):
-    """{name: folder} for the Thai models convert_model.py has written under <data_dir>/models."""
-    dirs = {name: Path(data_dir) / "models" / name for name in THAI_MODELS}
-    return {name: str(d) for name, d in dirs.items() if (d / "model.bin").exists()}
+def thai_model_dir(data_dir, name):
+    return Path(data_dir) / "models" / name
+
+
+def _missing_files(data_dir, name):
+    return [f for f in MODEL_FILES if not (thai_model_dir(data_dir, name) / f).exists()]
+
+
+def model_catalog(data_dir):
+    """Every model the app offers; a Thai model also has "state": installed, incomplete or missing."""
+    out = []
+    for m in MODELS:
+        entry = {"name": m["name"], "label": m["label"], "thai": "repo" in m}
+        if entry["thai"]:
+            missing = _missing_files(data_dir, m["name"])
+            entry["state"] = "installed" if not missing else "missing" if len(missing) == len(MODEL_FILES) else "incomplete"
+        out.append(entry)
+    return out
+
 
 
 def looks_hallucinated(text):
@@ -256,9 +279,13 @@ class Job:
                 return {"error": "Choose at least one person"}
             model = source = opts.get("model") or "small"
             if model in THAI_MODELS:
-                source = installed_thai_models(self.project.dir).get(model)
-                if not source:
+                missing = _missing_files(self.project.dir, model)
+                if len(missing) == len(MODEL_FILES):
                     return {"error": f"The {model} model is not installed yet. Run: python convert_model.py {model}"}
+                if missing:
+                    return {"error": f"The {model} model is incomplete (missing {', '.join(missing)}). "
+                                     f"Run again: python convert_model.py {model}"}
+                source = str(thai_model_dir(self.project.dir, model))
             self._t0 = time.time()
             self._st = dict(running=True, cancel=False, phase="loading", message="Starting…", note="", error=None,
                             recent=[], pos=0.0, dur=0.0, index=0, count=len(ids), who="", model=model)

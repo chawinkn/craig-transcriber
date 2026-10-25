@@ -7,7 +7,8 @@ import zipfile
 from pathlib import Path
 
 from project import Project
-from transcribe import Job, WhisperEngine, lines_from_segments, looks_hallucinated
+import convert_model
+from transcribe import MODEL_FILES, Job, WhisperEngine, lines_from_segments, looks_hallucinated, model_catalog
 
 
 def wav(seconds=0.2):
@@ -256,6 +257,27 @@ class LinesFromSegmentsTest(unittest.TestCase):
         self.assertEqual(out[0]["conf"], -0.5)
 
 
+class ModelCatalogTest(unittest.TestCase):
+    def test_lists_every_model_with_thai_model_states(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "models" / "pathumma").mkdir(parents=True)
+            (Path(d) / "models" / "pathumma" / "model.bin").write_bytes(b"")
+            (Path(d) / "models" / "typhoon").mkdir(parents=True)
+            for f in MODEL_FILES:
+                (Path(d) / "models" / "typhoon" / f).write_bytes(b"")
+            catalog = {m["name"]: m for m in model_catalog(d)}
+        self.assertEqual(list(catalog)[:4], ["small", "medium", "large-v3-turbo", "large-v3"])
+        self.assertEqual({n: (m["thai"], m.get("state")) for n, m in catalog.items() if m["thai"]},
+                         {"typhoon": (True, "installed"), "pathumma": (True, "incomplete")})
+        self.assertNotIn("state", catalog["large-v3"])
+        self.assertTrue(all(m["label"] for m in catalog.values()))
+
+    def test_missing_thai_model(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual({m["name"]: m.get("state") for m in model_catalog(d) if m["thai"]},
+                             {"typhoon": "missing", "pathumma": "missing"})
+
+
 class WhisperEngineTest(unittest.TestCase):
     def test_segments_carry_word_timings(self):
         word = type("W", (), {"start": 0.0, "end": 0.5, "word": " hi", "probability": 0.9})
@@ -409,9 +431,15 @@ class JobTest(unittest.TestCase):
     def test_thai_model_must_be_installed(self):
         err = Job(self.p, FakeEngine).start({"speakers": [self.sid], "model": "typhoon"})["error"]
         self.assertIn("python convert_model.py typhoon", err)
-        folder = self.p.dir / "models" / "typhoon"
+        folder = convert_model.output_dir("typhoon", self.p.dir)
         folder.mkdir(parents=True)
         (folder / "model.bin").write_bytes(b"")
+        err = Job(self.p, FakeEngine).start({"speakers": [self.sid], "model": "typhoon"})["error"]
+        self.assertIn("incomplete", err)
+        self.assertIn("preprocessor_config.json", err)
+        self.assertIn("python convert_model.py typhoon", err)
+        for f in MODEL_FILES:
+            (folder / f).write_bytes(b"")
         loaded = []
 
         class Recording(FakeEngine):

@@ -5,7 +5,12 @@ Needs extra packages the app itself does not: pip install ctranslate2 transforme
 import argparse
 from pathlib import Path
 
-from transcribe import THAI_MODELS
+from transcribe import THAI_MODELS, thai_model_dir
+
+
+def output_dir(model, data):
+    """Where a converted model goes: a Thai model's own folder, or one named after any other repo."""
+    return thai_model_dir(Path(data).resolve(), model if model in THAI_MODELS else model.replace("/", "--"))
 
 
 def main():
@@ -15,7 +20,7 @@ def main():
     args = ap.parse_args()
 
     repo = THAI_MODELS.get(args.model, args.model)
-    out = Path(args.data).resolve() / "models" / (args.model if args.model in THAI_MODELS else repo.replace("/", "--"))
+    out = output_dir(args.model, args.data)
     from ctranslate2.converters import TransformersConverter
     from transformers import WhisperProcessor
     print(f"Downloading {repo} and converting it to {out} (several GB, this takes a while)…")
