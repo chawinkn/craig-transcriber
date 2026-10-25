@@ -100,11 +100,11 @@ function renderEnv(){
   else if(e.cuda>0) b.append(el('div',{class:'box ok'},'✓ NVIDIA graphics card found. Transcribing will use it, which is much faster.'));
   else b.append(el('div',{class:'box warn'},'No NVIDIA graphics card was found, so the processor does the work. That is much slower: try a short recording first and choose the Balanced quality.',
     el('details',{},el('summary',{},'I have an NVIDIA card. Why was it not found?'),el('p',{class:'small'},'Update your NVIDIA driver, then run: ',el('code',{},'pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"'),' and start this program again. It needs a card that supports CUDA 12 (most GeForce cards from the last several years do).'))));
-  const sel=$('#model'); if(!sel.options.length){for(const m of e.models||[])sel.append(el('option',{value:m.name},m.label));sel.value=e.cuda>0?'large-v3':'small'; updateModelHint()}
+  const sel=$('#model'); if(!sel.options.length){for(const m of e.models||[])sel.append(el('option',{value:m.name},m.label));sel.value=((e.models||[]).find(m=>m.default===(e.cuda>0?'gpu':'cpu'))||{}).name||''; updateModelHint()}
 }
 function updateModelHint(){
   const v=$('#model').value,gpu=S.env.cuda>0,m=(S.env.models||[]).find(x=>x.name===v)||{},h=[];
-  if(!gpu&&(m.thai||/large|medium/.test(v)))h.push('This quality is very slow without a graphics card.');
+  if(!gpu&&m.slow)h.push('This quality is very slow without a graphics card.');
   if(m.thai)h.push('Thai only, so set Language to Thai.',{missing:`Not installed yet: run python convert_model.py ${v}, then reload this page.`,
     incomplete:`Incomplete: run python convert_model.py ${v} again, then reload this page.`}[m.state]||'');
   $('#modelHint').textContent=h.join(' ').trim()}
@@ -166,7 +166,7 @@ async function tick(){
     const frac=j.dur>0?Math.min(1,(j.index+j.pos/j.dur)/j.count):0;$('#jobBar').style.width=(j.phase==='loading'?3:frac*100)+'%';
     let t=j.message||'';
     if(j.phase==='working'){t=`Heard ${fmt(j.pos)}`+(j.dur?` of ${fmt(j.dur)}`:'')+` · ${fmt(j.elapsed)} elapsed · using the ${j.device==='cuda'?'graphics card':'processor'}`;
-      if(j.pos>20&&j.dur&&j.elapsed>10){const left=(j.dur-j.pos)*(j.elapsed/Math.max(1,(j.done||0)+j.pos));t+=` · about ${fmt(left)} left for this person`}}
+      if(j.pos>20&&j.dur&&j.elapsed>10){const left=(j.dur-j.pos)*(j.elapsed/Math.max(1,(j.audio_done||0)+j.pos));t+=` · about ${fmt(left)} left for this person`}}
     $('#jobText').textContent=t;$('#jobNote').textContent=j.note||'';
     $('#live').textContent='';for(const r of j.recent||[])$('#live').append(el('div',{},r));
   }else{
