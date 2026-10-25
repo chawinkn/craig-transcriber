@@ -79,12 +79,12 @@ class Project:
         return sorted(self._p["lines"], key=lambda l: (l["start"], order.get(l["spk"], 0)))
 
     def state(self):
-        """Speakers carry "touched": a line of theirs was reviewed or its text differs from the model's."""
+        """Speakers carry "touched": a line of theirs was reviewed, retyped or deleted since the model wrote it."""
         with self._lock:
             st = copy.deepcopy({"speakers": self._p["speakers"], "lines": self._sorted_lines()})
         touched = {l["spk"] for l in st["lines"] if l["ok"] or l["text"] != l.get("orig", l["text"])}
         for sp in st["speakers"]:
-            sp["touched"] = sp["id"] in touched
+            sp["touched"] = sp["id"] in touched or bool(sp.pop("deleted_by_hand", False))
         return st
 
     def speaker(self, sid):
@@ -201,7 +201,15 @@ class Project:
 
     def delete_line(self, line_id):
         with self._lock:
-            self._p["lines"] = [l for l in self._p["lines"] if l["id"] != line_id]
+            line = self._line(line_id)
+            if not line:
+                return
+            self._p["lines"].remove(line)
+            sp = self._speaker(line["spk"])
+            if sp and line.get("orig"):
+                sp["deleted_by_hand"] = True
+            if sp and not any(l["spk"] == sp["id"] for l in self._p["lines"]):
+                sp.pop("run", None)
             self._save()
 
     def rename_speaker(self, sid, name):
@@ -230,6 +238,7 @@ class Project:
                 sp["duration"] = duration
             if run is not None:
                 sp["run"] = run
+            sp.pop("deleted_by_hand", None)
             self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid]
             for s in segments:
                 conf = s.get("conf")

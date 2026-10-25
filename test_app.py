@@ -106,6 +106,16 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(touched(), {a: False, b: False})
         self.p.edit_lines([{"id": self.p.add_line_after(lb)["id"], "text": "added by hand"}])
         self.assertEqual(touched(), {a: False, b: True})
+        self.p.delete_line([l["id"] for l in self.p.state()["lines"] if l["text"] == "world"][0])
+        self.assertEqual(touched(), {a: True, b: True})
+        self.p.replace_lines(a, [seg(0, "fresh")])
+        self.assertEqual(touched(), {a: False, b: True})
+
+    def test_run_record_is_cleared_with_the_last_line(self):
+        a, _ = self.two()
+        self.p.replace_lines(a, [seg(0, "only")], run={"model": "m", "language": "th", "at": 1.0})
+        self.p.delete_line(next(l["id"] for l in self.p.state()["lines"] if l["spk"] == a))
+        self.assertNotIn("run", Project(self.dir).speaker(a))
 
     def test_reset_keeps_unrelated_files(self):
         self.two()
@@ -138,14 +148,15 @@ class ProjectTest(unittest.TestCase):
 
 class HallucinationRuleTest(unittest.TestCase):
     def test_flags_repeats_and_foreign_scripts(self):
-        for text in ["แก ร ั ติ เลย อี เข ีย บ อี เข ีย บ อี เข ีย บ อี เข ีย บ", "อีเขียบ อีเขียบ อีเขียบ อีเขียบ",
-                     "นะนะนะนะนะ", "además habíaон", "складดิงตรงนี้", "เออ ตอนนี้一點ก็เดี๋ยว", "ทีทีไว้ มันต้SuFắc SEEK"]:
+        for text in ["แก ร ั ติ เลย อี เข ีย บ อี เข ีย บ อี เข ีย บ ไม่ ทัน พอ เล่น", "อีเขียบ อีเขียบ อีเขียบ",
+                     "además habíaон", "складดิงตรงนี้", "เออ ตอนนี้一點ก็เดี๋ยว", "Mike is cursing too, Γειά"]:
             self.assertTrue(looks_hallucinated(text), text)
 
     def test_keeps_normal_thai_english_and_mixed(self):
         for text in ["เรียนแพทย์ดีกว่า", "No Way", "KMIT Open Courtware", "Essential Principal เลยนะเว้ย",
                      "อ่า ฮ่า ฮ่า ฮ่า", "เล่นๆ ตอนข้าง ตรงชีพหว่ะ", "เสียไป ๆ บางเมื่อ ๆ ๆ เยอะ ๆ", "เล่มละพัน 1,000 บาท?",
-                     "Sami in år 2000"]:
+                     "Sami in år 2000", "Tiếng Việt", "นะนะนะนะนะ", "ไม่ไม่ไม่ไม่", "ฮ่าฮ่าฮ่าฮ่า", "ha ha ha ha",
+                     "555555555", "1000000000"]:
             self.assertFalse(looks_hallucinated(text), text)
 
 
@@ -245,6 +256,22 @@ class JobTest(unittest.TestCase):
         lines = Project(self.p.dir).state()["lines"]
         self.assertEqual([(l["text"], l["suspect"]) for l in lines],
                          [("สวัสดี", False), ("อีเขียบ อีเขียบ อีเขียบ อีเขียบ", True), ("además habíaон", True)])
+
+    def test_failed_or_cancelled_run_keeps_previous_record(self):
+        self.run_job(FakeEngine, language="th")
+        before = self.p.speaker(self.sid)["run"]
+
+        class Boom(FakeEngine):
+            def transcribe(self, path, language, prompt):
+                raise RuntimeError("boom")
+
+        class Cancelling(FakeEngine):
+            def transcribe(self, path, language, prompt):
+                FakeEngine.job.cancel()
+                return super().transcribe(path, language, prompt)
+        for engine_cls in (Boom, Cancelling):
+            self.run_job(engine_cls, language="en")
+            self.assertEqual(self.p.speaker(self.sid)["run"], before)
 
     def test_failure_keeps_old_lines(self):
         class Boom(FakeEngine):

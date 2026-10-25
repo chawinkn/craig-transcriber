@@ -51,10 +51,12 @@ def installed_thai_models(data_dir):
 
 
 def looks_hallucinated(text):
-    """A phrase repeated four or more times in a row, or letters that are neither Thai nor Latin."""
-    if re.search(r"(.{2,}?)\1{3,}", re.sub(r"\s+", "", text)):
+    """A phrase of 4+ characters repeated 3+ times in a row, or letters that are neither Thai nor Latin."""
+    if re.search(r"(.{4,}?)\1{2,}", re.sub(r"\s+", "", text)):
         return True
-    return any(ch.isalpha() and not ("฀" <= ch <= "๿" or ch <= "ɏ") for ch in text)
+    # Latin: Basic through Extended-B (U+024F) plus Extended Additional (U+1E00-1EFF, Vietnamese).
+    return any(ch.isalpha() and not ("\u0e00" <= ch <= "\u0e7f" or ch <= "\u024f" or "\u1e00" <= ch <= "\u1eff")
+               for ch in text)
 
 
 class WhisperEngine:
@@ -231,8 +233,9 @@ class Job:
         self._set(message=f"Reading {name}'s audio…")
         dur, segments = engine.transcribe(a[0], language, prompt)
         self._set(dur=dur, message="")
+        detected = "" if language else getattr(engine, "language", "")
         if not language:
-            self._set(detected=getattr(engine, "language", ""))
+            self._set(detected=detected)
         kept = []
         for seg in segments:
             if self._cancelled:
@@ -245,7 +248,8 @@ class Job:
             with self._lock:
                 self._st["recent"] = (self._st["recent"] + [f"{name} [{project.hms(seg['start'])}] {text}"])[-4:]
         if not self._cancelled:
-            run = {"model": self._st["model"], "language": language or "auto", "at": time.time()}
+            with self._lock:
+                run = {"model": self._st["model"], "language": language or "auto", "at": time.time()}
             if not language:
-                run["detected"] = getattr(engine, "language", "")
+                run["detected"] = detected
             self.project.replace_lines(sid, kept, dur, run)

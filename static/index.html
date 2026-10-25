@@ -125,7 +125,7 @@ function upload(files){
     x.send(f)})),Promise.resolve()).then(async()=>{await refresh();S.speakers.forEach(s=>picks.set(s.id,true));renderPeople()});
 }
 function runText(r){
-  const lang=r.language==='auto'?`auto (${r.detected||'?'})`:r.language;
+  const name=c=>({th:'Thai',en:'English'})[c]||c, lang=r.language==='auto'?`auto (${name(r.detected)||'?'})`:name(r.language);
   return [r.model.split(/[\\/]/).pop(),lang,new Date(r.at*1000).toLocaleDateString(undefined,{day:'numeric',month:'short'})].join(' · ')}
 function renderPeople(){
   const box=$('#people');box.textContent='';
@@ -182,7 +182,7 @@ async function tick(){
 }
 
 const hasThai=s=>/[฀-๿]/.test(s), hasLatin=s=>(s.match(/[A-Za-z]/g)||[]).length>=2;
-const mixed=l=>hasThai(l.text)&&hasLatin(l.text), unsure=l=>l.suspect||(l.conf!=null&&l.conf<-0.9);
+const mixed=l=>hasThai(l.text)&&hasLatin(l.text), unsure=l=>(l.suspect&&l.text===l.orig)||(l.conf!=null&&l.conf<-0.9);
 const pend=new Map();let saveT=null;
 function queue(id,patch){pend.set(id,Object.assign(pend.get(id)||{id},patch));$('#saveState').textContent='Saving…';clearTimeout(saveT);saveT=setTimeout(flush,600)}
 async function flush(){const u=[...pend.values()];pend.clear();if(!u.length)return;try{await api('/api/lines',{updates:u});$('#saveState').textContent='Saved ✓'}catch(e){$('#saveState').textContent='⚠ Not saved: '+e.message}}
