@@ -118,7 +118,7 @@ function upload(files){
     x.onload=()=>{let j={};try{j=JSON.parse(x.responseText)}catch(_){}
       $('#upMsg').textContent=j.error?('⚠ '+j.error):`Added ${(j.added||[]).join(', ')}`;res()};
     x.onerror=()=>{$('#upMsg').textContent='⚠ Could not send '+f.name;res()};
-    x.send(f)})),Promise.resolve()).then(refresh);
+    x.send(f)})),Promise.resolve()).then(async()=>{await refresh();S.speakers.forEach(s=>picks.set(s.id,true));renderPeople()});
 }
 function renderPeople(){
   const box=$('#people');box.textContent='';
