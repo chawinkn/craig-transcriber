@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 from project import Project
-from transcribe import Job, WhisperEngine, looks_hallucinated
+from transcribe import Job, WhisperEngine, lines_from_segments, looks_hallucinated
 
 
 def wav(seconds=0.2):
@@ -160,37 +160,96 @@ class HallucinationRuleTest(unittest.TestCase):
             self.assertFalse(looks_hallucinated(text), text)
 
 
+def w(text, start, end, prob=0.9):
+    return {"text": text, "start": start, "end": end, "prob": prob}
+
+
+def lines(*segments):
+    return [(l["text"], round(l["start"], 2), round(l["end"], 2)) for l in lines_from_segments(segments)]
+
+
+class LinesFromSegmentsTest(unittest.TestCase):
+    def test_segment_without_words_is_one_line_and_filters_still_apply(self):
+        self.assertEqual(lines(seg(0, " hello "), seg(1, "  "), seg(2, "noise", conf=-1.5, no_speech=0.9), seg(3, "world")),
+                         [("hello", 0, 1), ("world", 3, 4)])
+
+    def test_thai_pause_moves_the_stray_piece_to_the_next_line(self):
+        words = [w(" ผม", 0.0, 0.3), w("เรียน", 0.3, 0.8), w(" อย", 0.8, 0.9), w("าก", 5.4, 5.6), w("เรียน", 5.6, 6.0)]
+        self.assertEqual(lines({**seg(0, "ผมเรียน อยากเรียน"), "end": 6.0, "words": words}),
+                         [("ผมเรียน", 0.0, 0.8), ("อยากเรียน", 5.4, 6.0)])
+
+    def test_no_word_start_nearby_cuts_at_the_pause(self):
+        words = [w("ก", 0.0, 0.2), w("าร", 0.2, 0.4), w("บ", 2.5, 2.7), w("ัญชี", 2.7, 3.0)]
+        self.assertEqual(lines({**seg(0, "การบัญชี"), "end": 3.0, "words": words}),
+                         [("การ", 0.0, 0.4), ("บัญชี", 2.5, 3.0)])
+
+    def test_fallback_cut_never_splits_a_thai_syllable(self):
+        dependent = [w("เล่น", 0.0, 0.4), w("ก", 0.4, 0.5), w("าร", 3.0, 3.2), w("บ้าน", 3.2, 3.5)]
+        self.assertEqual(lines({**seg(0, "เล่นการบ้าน"), "end": 3.5, "words": dependent}),
+                         [("เล่น", 0.0, 0.4), ("การบ้าน", 3.0, 3.5)])
+        leading = [w("ดี", 0.0, 0.3), w("โ", 0.3, 0.4), w("อ", 2.0, 2.1), w("เค", 2.1, 2.3)]
+        self.assertEqual(lines({**seg(0, "ดีโอเค"), "end": 2.3, "words": leading}),
+                         [("ดี", 0.0, 0.3), ("โอเค", 2.0, 2.3)])
+
+    def test_syllable_piece_between_two_pauses_joins_the_next_line(self):
+        words = [w("ดี", 0.0, 0.3), w("ก", 1.0, 1.1), w("าร", 2.0, 2.2), w(" ม", 2.2, 2.3), w("า", 4.0, 4.2)]
+        self.assertEqual(lines({**seg(0, "ดีการ มา"), "end": 4.2, "words": words}),
+                         [("ดี", 0.0, 0.3), ("การ", 2.0, 2.2), ("มา", 4.0, 4.2)])
+
+    def test_english_after_thai_counts_as_a_word_start(self):
+        words = [w("โหลด", 0.0, 0.4), w("ห", 0.4, 0.5), w("KM", 0.5, 0.6), w("IT", 1.4, 1.6)]
+        self.assertEqual(lines({**seg(0, "โหลดหKMIT"), "end": 1.6, "words": words}),
+                         [("โหลดห", 0.0, 0.5), ("KMIT", 1.4, 1.6)])
+
+    def test_short_pauses_do_not_split(self):
+        words = [w(" ก็", 0.0, 0.3), w(" จริง", 0.8, 1.2)]
+        self.assertEqual(lines({**seg(0, "ก็ จริง"), "end": 1.2, "words": words}), [("ก็ จริง", 0.0, 1.2)])
+
+    def test_line_over_twelve_seconds_splits_at_its_biggest_pause(self):
+        words = [w(f" w{i}", i * 0.55, i * 0.55 + 0.5) for i in range(15)]
+        words += [w(f" w{i}", 8.6 + (i - 15) * 0.55, 8.6 + (i - 15) * 0.55 + 0.5) for i in range(15, 30)]
+        out = lines({**seg(0, "x"), "end": 16.8, "words": words})
+        self.assertEqual([(t.split()[0], t.split()[-1], a, b) for t, a, b in out],
+                         [("w0", "w14", 0.0, 8.2), ("w15", "w29", 8.6, 16.8)])
+
+    def test_impossibly_fast_line_is_flagged_not_dropped(self):
+        out = list(lines_from_segments([{**seg(57.2, "สินค้า คงเหลือ สิบเอ็ด บาท"), "end": 57.8},
+                                        {**seg(60.0, "เออ แพงจังอะ"), "end": 61.0}]))
+        self.assertEqual([(l["text"], l["suspect"]) for l in out],
+                         [("สินค้า คงเหลือ สิบเอ็ด บาท", True), ("เออ แพงจังอะ", False)])
+
+    def test_split_lines_get_their_own_confidence(self):
+        words = [w(" ดี", 0.0, 0.4, 0.9), w(" มาก", 0.4, 0.8, 0.9), w(" xq", 3.0, 3.4, 0.05)]
+        out = list(lines_from_segments([{**seg(0, "ดี มาก xq", conf=-0.5), "end": 3.4, "words": words}]))
+        self.assertEqual([l["text"] for l in out], ["ดี มาก", "xq"])
+        self.assertAlmostEqual(out[0]["conf"], -0.105, places=3)
+        self.assertAlmostEqual(out[1]["conf"], -2.996, places=3)
+
+    def test_unsplit_line_keeps_the_segment_confidence(self):
+        words = [w(" ดี", 0.0, 0.4, 0.1), w(" มาก", 0.5, 0.8, 0.1)]
+        out = list(lines_from_segments([{**seg(0, "ดี มาก", conf=-0.5), "end": 0.8, "words": words}]))
+        self.assertEqual(out[0]["conf"], -0.5)
+
+
 class WhisperEngineTest(unittest.TestCase):
-    def engine(self):
-        calls = []
+    def test_segments_carry_word_timings(self):
+        word = type("W", (), {"start": 0.0, "end": 0.5, "word": " hi", "probability": 0.9})
+        segment = type("S", (), {"start": 0.0, "end": 1.0, "text": " hi", "avg_logprob": -0.2, "no_speech_prob": 0.1,
+                                 "words": [word]})
 
         class Model:
             def transcribe(self, audio, **kw):
-                calls.append(kw)
-                s = type("S", (), {"start": 0.0, "end": 1.0, "text": " hi", "avg_logprob": -0.2, "no_speech_prob": 0.1})
-                return iter([s]), type("Info", (), {"language": "th"})
+                return iter([segment]), type("Info", (), {"language": "th"})
 
         class Engine(WhisperEngine):
             load_audio = staticmethod(lambda path: [0.0] * 32000)
 
             def _load(self, prefer_cpu):
                 self._model, self.device = Model(), "cpu"
-        return Engine("m", True, lambda **kw: None), calls
-
-    def test_vocabulary_is_prompt_and_hotwords_and_loops_are_guarded_without_silence_skip(self):
-        engine, calls = self.engine()
-        dur, segs = engine.transcribe("a.wav", "th", "ขนุน, Go Fiber")
-        self.assertEqual((dur, list(segs)[0]["text"], engine.language), (2.0, " hi", "th"))
-        kw = calls[0]
-        self.assertEqual((kw["language"], kw["initial_prompt"], kw["hotwords"]), ("th", "ขนุน, Go Fiber", "ขนุน, Go Fiber"))
-        self.assertTrue(kw["word_timestamps"])
-        self.assertGreater(kw["no_repeat_ngram_size"], 0)
-        self.assertNotIn("hallucination_silence_threshold", kw)   # dropped ~70% of speech on noisy audio (#4)
-
-    def test_no_vocabulary_sends_no_hotwords(self):
-        engine, calls = self.engine()
-        list(engine.transcribe("a.wav", None, "")[1])
-        self.assertEqual((calls[0]["language"], calls[0]["initial_prompt"], calls[0]["hotwords"]), (None, None, None))
+        engine = Engine("m", True, lambda **kw: None)
+        dur, segs = engine.transcribe("a.wav", "th", "")
+        self.assertEqual((dur, engine.language), (2.0, "th"))
+        self.assertEqual(list(segs)[0]["words"], [{"start": 0.0, "end": 0.5, "text": " hi", "prob": 0.9}])
 
 
 class FakeEngine:
