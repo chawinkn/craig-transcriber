@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import threading
@@ -59,6 +60,87 @@ def looks_hallucinated(text):
                for ch in text)
 
 
+# No hallucination_silence_threshold: on noisy Thai audio it dropped ~70% of real speech (#4).
+# PONYTAIL: no_repeat_ngram_size=10 measured on two one-minute clips only; retune with more recordings.
+DECODE = dict(beam_size=5, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500),
+              condition_on_previous_text=False, word_timestamps=True, no_repeat_ngram_size=10)
+
+# Measured on one-minute Thai clips: pauses of 0.6 s keep every Line under 12 s; 30 chars/s is faster than anyone speaks.
+LINE_GAP, LINE_MAX, LINE_MAX_CPS = 0.6, 12.0, 30.0
+
+
+def _starts_word(words, j):
+    """Thai "words" are token pieces: a piece starts a word after a space, or where Latin follows non-Latin."""
+    text, prev = words[j]["text"], words[j - 1]["text"]
+    latin = lambda ch: ch.isascii() and ch.isalpha()
+    return text[:1].isspace() or (latin(text[:1]) and not latin(prev[-1:]))
+
+
+_THAI_FOLLOWING = re.compile(r"[\u0e30-\u0e3a\u0e45\u0e47-\u0e4e]")  # vowels and marks written after a consonant
+_THAI_LEADING = re.compile(r"[\u0e40-\u0e44]")                           # vowels written before it
+
+
+def _splits_syllable(words, c):
+    return bool(_THAI_FOLLOWING.match(words[c]["text"]) or _THAI_LEADING.match(words[c - 1]["text"][-1:]))
+
+
+def _cut(words, lo, i, floor):
+    """Index where a Line after the pause before words[i] begins: back to a word start within 3 pieces,
+    else back past any split Thai syllable, but not below floor. The first piece of a word is often
+    timed before the pause."""
+    c = next((j for j in range(i, max(lo, i - 3), -1) if _starts_word(words, j)), None)
+    if c is None:
+        c = i
+        while c > floor and c > i - 3 and _splits_syllable(words, c):
+            c -= 1
+    return c
+
+
+def _cap(words, lo, hi, start, end):
+    if end - start <= LINE_MAX or hi - lo < 2:
+        return [(lo, hi, start, end)]
+    i = max(range(lo + 1, hi), key=lambda k: words[k]["start"] - words[k - 1]["end"])
+    c = _cut(words, lo, i, lo + 1)
+    return _cap(words, lo, c, start, words[c - 1]["end"]) + _cap(words, c, hi, words[i]["start"], end)
+
+
+def _spans(words):
+    """(first, past-last, start, end) per Line, splitting at pauses of LINE_GAP and capping at LINE_MAX."""
+    spans, lo, start = [], 0, words[0]["start"]
+    for i in range(1, len(words)):
+        if words[i]["start"] - words[i - 1]["end"] >= LINE_GAP:
+            c = _cut(words, lo, i, lo)
+            if c > lo:                  # else the whole previous stretch was a stray syllable piece: it joins this Line
+                spans.append((lo, c, start, words[c - 1]["end"]))
+            lo, start = c, words[i]["start"]
+    spans.append((lo, len(words), start, words[-1]["end"]))
+    return [part for span in spans for part in _cap(words, *span)]
+
+
+def _line(start, end, text, conf):
+    chars = len(re.sub(r"\s+", "", text))
+    too_fast = chars >= 8 and chars / max(end - start, 0.01) > LINE_MAX_CPS
+    return {"start": start, "end": end, "text": text, "conf": conf, "suspect": too_fast or looks_hallucinated(text)}
+
+
+def lines_from_segments(segments):
+    """Yield Lines from engine segments: drop silence and empty text, split long segments at pauses, flag suspects."""
+    for seg in segments:
+        text, conf = seg["text"].strip(), seg.get("conf")
+        if not text or ((seg.get("no_speech") or 0) > 0.8 and conf is not None and conf < -1.0):
+            continue
+        words = seg.get("words") or []
+        spans = _spans(words) if words else []
+        if len(spans) < 2:
+            yield _line(seg["start"], seg["end"], text, conf)
+            continue
+        for lo, hi, start, end in spans:
+            part = "".join(w["text"] for w in words[lo:hi]).strip()
+            if part:
+                logs = [math.log(max(w["prob"], 1e-6)) for w in words[lo:hi]]
+                yield _line(start, end, part, sum(logs) / len(logs))
+
+
 class WhisperEngine:
     def __init__(self, model_name, prefer_cpu, on_status):
         self.model_name = model_name
@@ -114,19 +196,17 @@ class WhisperEngine:
         return np.concatenate(chunks).astype(np.float32) / 32768.0
 
     def transcribe(self, audio_path, language, prompt):
-        """(duration in seconds, iterator of {start, end, text, conf, no_speech}). Sets self.language."""
+        """(duration in seconds, iterator of {start, end, text, conf, no_speech, words}). Sets self.language."""
         audio = self.load_audio(audio_path)
-        segments, info = self._model.transcribe(
-            audio, language=language or None, beam_size=5, vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500), condition_on_previous_text=False,
-            initial_prompt=prompt or None, hotwords=prompt or None,
-            # No hallucination_silence_threshold: on noisy Thai audio it dropped ~70% of real speech (#4).
-            # PONYTAIL: no_repeat_ngram_size=10 measured on two one-minute clips only; retune with more recordings.
-            word_timestamps=True, no_repeat_ngram_size=10)
+        segments, info = self._model.transcribe(audio, language=language or None, initial_prompt=prompt or None,
+                                                hotwords=prompt or None, **DECODE)
         self.language = getattr(info, "language", "")
         return len(audio) / 16000.0, ({"start": float(s.start), "end": float(s.end), "text": s.text,
                                        "conf": getattr(s, "avg_logprob", None),
-                                       "no_speech": getattr(s, "no_speech_prob", 0) or 0} for s in segments)
+                                       "no_speech": getattr(s, "no_speech_prob", 0) or 0,
+                                       "words": [{"start": float(w.start), "end": float(w.end), "text": w.word,
+                                                  "prob": float(w.probability)} for w in (getattr(s, "words", None) or [])]}
+                                      for s in segments)
 
 
 class Job:
@@ -238,16 +318,13 @@ class Job:
         if not language:
             self._set(detected=detected)
         kept = []
-        for seg in segments:
+        for line in lines_from_segments(segments):
             if self._cancelled:
                 return                              # keep their previous lines
-            self._set(pos=float(seg["end"]))
-            text, conf = seg["text"].strip(), seg.get("conf")
-            if not text or ((seg.get("no_speech") or 0) > 0.8 and conf is not None and conf < -1.0):
-                continue
-            kept.append({**seg, "text": text, "suspect": looks_hallucinated(text)})
+            self._set(pos=float(line["end"]))
+            kept.append(line)
             with self._lock:
-                self._st["recent"] = (self._st["recent"] + [f"{name} [{project.hms(seg['start'])}] {text}"])[-4:]
+                self._st["recent"] = (self._st["recent"] + [f"{name} [{project.hms(line['start'])}] {line['text']}"])[-4:]
         if not self._cancelled:
             with self._lock:
                 run = {"model": self._st["model"], "language": language or "auto", "at": time.time()}
