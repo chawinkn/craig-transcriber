@@ -181,12 +181,10 @@ async function tick(){
   }
 }
 
-const hasThai=s=>/[฀-๿]/.test(s), hasLatin=s=>(s.match(/[A-Za-z]/g)||[]).length>=2;
-const mixed=l=>hasThai(l.text)&&hasLatin(l.text), unsure=l=>(l.suspect&&l.text===l.orig)||(l.conf!=null&&l.conf<-0.9);
 const pend=new Map();let saveT=null;
 function queue(id,patch){pend.set(id,Object.assign(pend.get(id)||{id},patch));$('#saveState').textContent='Saving…';clearTimeout(saveT);saveT=setTimeout(flush,600)}
 async function flush(){const u=[...pend.values()];pend.clear();if(!u.length)return;try{await api('/api/lines',{updates:u});$('#saveState').textContent='Saved ✓'}catch(e){$('#saveState').textContent='⚠ Not saved: '+e.message}}
-function visible(){const f=$('#filter').value;return S.lines.filter(l=>f==='all'||(f==='todo'&&!l.ok)||(f==='check'&&!l.ok&&(mixed(l)||unsure(l))))}
+function visible(){const f=$('#filter').value;return S.lines.filter(l=>f==='all'||(f==='todo'&&!l.ok)||(f==='check'&&!l.ok&&(l.mixed||l.unsure)))}
 function counts(){const n=S.lines.length,d=S.lines.filter(l=>l.ok).length;$('#counts').textContent=n?`${n} lines · ${d} reviewed`:''}
 function autosize(t){t.style.height='auto';t.style.height=Math.max(40,t.scrollHeight+2)+'px'}
 function renderLines(){
@@ -195,13 +193,13 @@ function renderLines(){
     const sp=spk(l.spk), ta=el('textarea',{lang:'th',spellcheck:'false'});ta.value=l.text;
     const ck=el('input',{type:'checkbox'});ck.checked=l.ok;
     const row=el('div',{class:'line'+(l.ok?' done':''),'data-id':l.id});
-    const tags=el('div',{class:'tags'});if(mixed(l))tags.append(el('span',{class:'tag'},'TH/EN'));if(unsure(l))tags.append(el('span',{class:'tag low'},'unsure'));
+    const tags=el('div',{class:'tags'});if(l.mixed)tags.append(el('span',{class:'tag'},'TH/EN'));if(l.unsure)tags.append(el('span',{class:'tag low'},'unsure'));
     row.append(el('div',{class:'meta'},el('div',{},el('button',{class:'play',onclick:()=>playLine(l.id)},'▶')),
         el('div',{class:'who',style:'color:'+col(l.spk)},sp?sp.name:'?'),el('div',{class:'t'},fmt(l.start)+' – '+fmt(l.end)),tags),
       el('div',{},ta,el('div',{class:'acts'},el('label',{},ck,' reviewed'),
         el('button',{onclick:async()=>{const r=await api('/api/line/add',{after:l.id});S.lines.push(r.line);S.lines.sort((a,b)=>a.start-b.start);renderLines();document.querySelector(`[data-id="${r.line.id}"] textarea`)?.focus()}},'+ line below'),
         el('button',{onclick:async()=>{if(!l.text||confirm('Delete this line?')){await api('/api/line/delete',{id:l.id});S.lines=S.lines.filter(x=>x.id!==l.id);renderLines()}}},'delete'),
-        l.text!==l.orig&&l.orig?el('span',{class:'tag'},'edited'):null)));
+        l.edited?el('span',{class:'tag'},'edited'):null)));
     ta.addEventListener('input',()=>{l.text=ta.value;autosize(ta);queue(l.id,{text:ta.value})});
     ck.onchange=()=>{l.ok=ck.checked;row.classList.toggle('done',l.ok);queue(l.id,{ok:l.ok});counts()};
     ta.addEventListener('keydown',e=>{if(e.altKey&&e.key==='Enter'){e.preventDefault();l.ok=true;ck.checked=true;row.classList.add('done');queue(l.id,{ok:true});counts();
@@ -212,7 +210,7 @@ function renderLines(){
   tas.forEach(t=>t.style.height='auto');const hs=tas.map(t=>t.scrollHeight);tas.forEach((t,i)=>t.style.height=Math.max(40,hs[i]+2)+'px');
   if(cur)mark(cur);
 }
-$('#filter').onchange=renderLines;
+$('#filter').onchange=refresh;
 window.addEventListener('beforeunload',e=>{if(pend.size>0){e.preventDefault();e.returnValue=''}});
 $('#replaceAll').onclick=async()=>{
   const f=$('#find').value;if(!f)return;const mc=$('#matchCase').checked,re=new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),mc?'g':'gi');

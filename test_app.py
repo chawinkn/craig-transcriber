@@ -117,6 +117,31 @@ class ProjectTest(unittest.TestCase):
         self.p.delete_line(next(l["id"] for l in self.p.state()["lines"] if l["spk"] == a))
         self.assertNotIn("run", Project(self.dir).speaker(a))
 
+    def test_every_line_carries_its_review_flags(self):
+        upload(self.p, "1-a.wav", wav())
+        sid = self.p.state()["speakers"][0]["id"]
+        self.p.replace_lines(sid, [seg(0, "สวัสดีครับ"), seg(1, "ฟังไม่ชัด", conf=-1.2), {**seg(2, "อีเขียบ อีเขียบ อีเขียบ"), "suspect": True},
+                                   seg(3, "Essential Principal เลยนะเว้ย"), seg(4, "OK นะ"), seg(5, "แก้ทีหลัง")])
+        ids = {l["text"]: l["id"] for l in self.p.state()["lines"]}
+        self.p.edit_lines([{"id": ids["อีเขียบ อีเขียบ อีเขียบ"], "text": "อีกแล้ว"}, {"id": ids["แก้ทีหลัง"], "text": "แก้แล้ว"}])
+        added = self.p.add_line_after(ids["แก้ทีหลัง"])["id"]
+        self.p.edit_lines([{"id": added, "text": "พิมพ์เอง"}])
+        self.p.add_line_after(added)
+        flags = {l["text"]: (l["unsure"], l["mixed"], l["edited"]) for l in Project(self.dir).state()["lines"]}
+        self.assertEqual(flags, {"สวัสดีครับ": (False, False, False), "ฟังไม่ชัด": (True, False, False),
+                                 "อีกแล้ว": (False, False, True), "Essential Principal เลยนะเว้ย": (False, True, False),
+                                 "OK นะ": (False, True, False), "แก้แล้ว": (False, False, True),
+                                 "พิมพ์เอง": (False, False, True), "": (False, False, False)})
+
+    def test_old_lines_without_new_fields_get_flags(self):
+        self.dir.mkdir()
+        (self.dir / "project.json").write_text(json.dumps({
+            "speakers": [{"id": "s1", "name": "Old", "file": "s1.flac", "ext": ".flac", "duration": None, "source": "1-Old.flac"}],
+            "lines": [{"id": "l2", "spk": "s1", "start": 1.0, "end": 2.0, "text": "hi there", "conf": -1.5, "ok": False}],
+            "seq": 2}))
+        line = Project(self.dir).state()["lines"][0]
+        self.assertEqual((line["unsure"], line["mixed"], line["edited"]), (True, False, False))
+
     def test_reset_keeps_unrelated_files(self):
         self.two()
         (self.dir / "keep.txt").write_text("mine")
