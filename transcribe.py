@@ -145,10 +145,11 @@ def _spans(words):
     return [part for span in spans for part in _cap(words, *span)]
 
 
-def _line(start, end, text, conf):
+def _line(start, end, text, conf, words):
     chars = len(re.sub(r"\s+", "", text))
     too_fast = chars >= 20 and chars / max(end - start, 0.01) > LINE_MAX_CPS
-    return {"start": start, "end": end, "text": text, "conf": conf, "suspect": too_fast or looks_hallucinated(text)}
+    return {"start": start, "end": end, "text": text, "conf": conf, "suspect": too_fast or looks_hallucinated(text),
+            "words": [{"text": w["text"], "prob": w["prob"]} for w in words]}
 
 
 def _join_fragments(lines):
@@ -178,7 +179,8 @@ def _merged(parts):
     for p in parts[1:]:
         text += (" " if text[-1:].isascii() and text[-1:].isalnum() and p["text"][:1].isascii() and p["text"][:1].isalnum() else "") + p["text"]
     confs = [p["conf"] for p in parts if p["conf"] is not None]
-    return _line(parts[0]["start"], parts[-1]["end"], text, sum(confs) / len(confs) if confs else None)
+    return _line(parts[0]["start"], parts[-1]["end"], text, sum(confs) / len(confs) if confs else None,
+                 [w for p in parts for w in p["words"]])
 
 
 def lines_from_segments(segments):
@@ -194,13 +196,13 @@ def _split_segments(segments):
         words = seg.get("words") or []
         spans = _spans(words) if words else []
         if len(spans) < 2:
-            yield _line(seg["start"], seg["end"], text, conf)
+            yield _line(seg["start"], seg["end"], text, conf, words)
             continue
         for lo, hi, start, end in spans:
             part = "".join(w["text"] for w in words[lo:hi]).strip()
             if part:
                 logs = [math.log(max(w["prob"], 1e-6)) for w in words[lo:hi]]
-                yield _line(start, end, part, sum(logs) / len(logs))
+                yield _line(start, end, part, sum(logs) / len(logs), words[lo:hi])
 
 
 class WhisperEngine:

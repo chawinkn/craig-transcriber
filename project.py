@@ -24,13 +24,33 @@ def srt_time(t):
     return f"{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}:{ms % 60000 // 1000:02d},{ms % 1000:03d}"
 
 
+UNSURE_WORD_PROB = 0.5      # provisional, tuned in #29
+
+
+def unsure_spans(text, words):
+    """[start, end) character spans in text of the words under UNSURE_WORD_PROB, found in order."""
+    spans, pos = [], 0
+    for w in words:
+        piece = w["text"].strip()
+        i = text.find(piece, pos) if piece else -1
+        if i < 0:
+            continue
+        pos = i + len(piece)
+        if w["prob"] < UNSURE_WORD_PROB:
+            spans.append([i, pos])
+    return spans
+
+
 def review_flags(line):
-    """unsure: low confidence, or flagged as made up while still the model's text; mixed: Thai with English;
-    edited: the text differs from what the model wrote, which includes Lines typed in by hand."""
-    text, conf = line["text"], line.get("conf")
+    """unsure: has an Unsure word, or flagged as made up while still the model's text; Lines without words (older
+    runs) use low confidence instead. mixed: Thai with English; edited: the text differs from what the model wrote,
+    which includes Lines typed in by hand. unsure_words: character spans in the text."""
+    text, conf, words = line["text"], line.get("conf"), line.get("words")
     edited = text != line.get("orig", text)
-    return {"edited": edited,
-            "unsure": (bool(line.get("suspect")) and not edited) or (conf is not None and conf < -0.9),
+    spans = [] if edited or not words else unsure_spans(text, words)
+    return {"edited": edited, "unsure_words": spans,
+            "unsure": bool(spans) or (bool(line.get("suspect")) and not edited)
+                      or (not words and conf is not None and conf < -0.9),
             "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2}
 
 
@@ -258,7 +278,9 @@ class Project:
                 self._p["lines"].append({"id": self._new_id("l"), "spk": sid, "start": round(float(s["start"]), 2),
                                          "end": round(float(s["end"]), 2), "text": s["text"], "orig": s["text"],
                                          "conf": None if conf is None else round(float(conf), 3), "ok": False,
-                                         "suspect": bool(s.get("suspect"))})
+                                         "suspect": bool(s.get("suspect")),
+                                         "words": [{"text": x["text"], "prob": round(float(x["prob"]), 3)}
+                                                   for x in s.get("words") or []]})
             self._save()
 
     def reset(self):

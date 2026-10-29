@@ -145,6 +145,46 @@ class ProjectTest(unittest.TestCase):
         line = Project(self.dir).state()["lines"][0]
         self.assertEqual((line["unsure"], line["mixed"], line["edited"]), (True, False, False))
 
+    def lined(self, text, words, **kw):
+        upload(self.p, "1-a.wav", wav())
+        sid = self.p.state()["speakers"][0]["id"]
+        self.p.replace_lines(sid, [{**seg(0, text, **kw), "words": words}])
+        return Project(self.dir).state()["lines"][0]
+
+    def test_line_with_a_word_under_the_cutoff_is_unsure_and_spans_that_word(self):
+        line = self.lined("hello wrold again", [pw(" hello"), pw(" wrold", 0.2), pw(" again")])
+        self.assertTrue(line["unsure"])
+        self.assertEqual([line["text"][s:e] for s, e in line["unsure_words"]], ["wrold"])
+
+    def test_spans_follow_repeated_words_in_order(self):
+        line = self.lined("no no no", [pw(" no"), pw(" no", 0.1), pw(" no", 0.1)])
+        self.assertEqual(line["unsure_words"], [[3, 5], [6, 8]])
+
+    def test_confident_words_are_not_unsure_whatever_the_line_confidence(self):
+        line = self.lined("hello world", [pw(" hello"), pw(" world", 0.5)], conf=-2.0)
+        self.assertEqual((line["unsure"], line["unsure_words"]), (False, []))
+
+    def test_editing_the_text_clears_the_unsure_words(self):
+        line = self.lined("hello wrold", [pw(" hello"), pw(" wrold", 0.2)])
+        self.p.edit_lines([{"id": line["id"], "text": "hello world"}])
+        line = self.p.state()["lines"][0]
+        self.assertEqual((line["unsure"], line["unsure_words"]), (False, []))
+
+    def test_old_line_without_words_still_uses_line_confidence(self):
+        self.dir.mkdir()
+        (self.dir / "project.json").write_text(json.dumps({
+            "speakers": [{"id": "s1", "name": "Old", "file": "s1.flac", "ext": ".flac", "duration": None, "source": "1-Old.flac"}],
+            "lines": [{"id": "l2", "spk": "s1", "start": 1.0, "end": 2.0, "text": "hi there", "conf": -1.5, "ok": False}],
+            "seq": 2}))
+        line = Project(self.dir).state()["lines"][0]
+        self.assertEqual((line["unsure"], line["unsure_words"]), (True, []))
+
+    def test_words_are_stored_rounded_and_stay_out_of_exports(self):
+        line = self.lined("hello", [pw(" hello", 0.123456)])
+        self.assertEqual(line["words"], [pw(" hello", 0.123)])
+        self.assertNotIn("words", self.p.export("json")[0])
+        self.assertNotIn("0.123", self.p.export("txt")[0] + self.p.export("srt")[0])
+
     def test_reset_keeps_unrelated_files(self):
         self.two()
         (self.dir / "keep.txt").write_text("mine")
@@ -197,7 +237,33 @@ def lines(*segments):
     return [(l["text"], round(l["start"], 2), round(l["end"], 2)) for l in lines_from_segments(segments)]
 
 
+def full_lines(*segments):
+    return list(lines_from_segments(segments))
+
+
+def pw(text, prob=0.9):
+    return {"text": text, "prob": prob}
+
+
 class LinesFromSegmentsTest(unittest.TestCase):
+    def test_whole_segment_line_carries_all_its_words(self):
+        words = [w(" hello", 0.0, 0.4, 0.2), w(" world", 0.4, 0.8)]
+        self.assertEqual(full_lines({**seg(0, " hello world"), "words": words})[0]["words"], [pw(" hello", 0.2), pw(" world")])
+
+    def test_segment_without_words_gives_empty_words(self):
+        self.assertEqual(full_lines(seg(0, "hello"))[0]["words"], [])
+
+    def test_split_line_carries_only_its_own_words(self):
+        words = [w(" one", 0.0, 0.3), w(" two", 0.3, 0.6, 0.1), w(" three", 5.0, 5.3), w(" four", 5.3, 5.6)]
+        got = full_lines({**seg(0, "one two three four"), "end": 5.6, "words": words})
+        self.assertEqual([(l["text"], l["words"]) for l in got],
+                         [("one two", [pw(" one"), pw(" two", 0.1)]), ("three four", [pw(" three"), pw(" four")])])
+
+    def test_joined_fragments_carry_all_parts_words_in_order(self):
+        piece = lambda t, a: {**seg(a, t), "end": a + 0.1, "words": [w(t, a, a + 0.1, 0.4)]}
+        got = full_lines(piece("ก", 0.0), piece("็คือ", 0.1))
+        self.assertEqual([(l["text"], l["words"]) for l in got], [("ก็คือ", [pw("ก", 0.4), pw("็คือ", 0.4)])])
+
     def test_segment_without_words_is_one_line_and_filters_still_apply(self):
         self.assertEqual(lines(seg(0, " hello "), seg(1, "  "), seg(2, "noise", conf=-1.5, no_speech=0.9), seg(3, "world")),
                          [("hello", 0, 1), ("world", 3, 4)])
@@ -436,6 +502,12 @@ class JobTest(unittest.TestCase):
         self.assertNotIn("t0", st)
         self.assertEqual([t for _, t in texts(self.p)], ["hello", "world"])
         self.assertEqual(self.p.speaker(self.sid)["duration"], 4.0)
+
+    def test_words_reach_the_state(self):
+        class Worded(FakeEngine):
+            segments = [{**seg(0, "hello"), "words": [w("hello", 0.0, 0.5, 0.2)]}]
+        self.run_job(Worded)
+        self.assertEqual(self.p.state()["lines"][0]["words"], [pw("hello", 0.2)])
 
     def test_success_records_the_run_options(self):
         self.run_job(FakeEngine, language="th", prompt=" ขนุน, Go Fiber ")
