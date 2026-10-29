@@ -12,7 +12,7 @@ OK = {"ok": True}
 
 def add_line(p, b):
     line = p.add_line_at(b.get("spk"), b.get("start"), b.get("end")) if "spk" in b else p.add_line_after(b.get("after"))
-    return {"line": line} if line else ({"error": "No such line"}, 400)
+    return {"line": line} if line else ({"error": "Could not add a Line there"}, 400)
 
 
 # JSON POST routes: path -> (project, job, body) -> response, or (response, status code). Mutators return None.

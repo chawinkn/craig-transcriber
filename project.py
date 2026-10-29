@@ -87,19 +87,19 @@ def review_flags(line):
             causes = [(repeats(text), "repeated phrase"), (foreign_letters(text), "foreign letters"),
                       (too_fast(text, line.get("start", 0), line.get("end", 0)), "timing")]
             reasons += [r for hit, r in causes if hit] or ["looks made up"]
-        if too_slow(text, line.get("start", 0), line.get("end", 0)):
+        if text.strip() and too_slow(text, line.get("start", 0), line.get("end", 0)):
             reasons.append("missed speech")
     return {"edited": edited, "unsure_words": spans, "reasons": reasons, "unsure": bool(reasons),
             "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2}
 
 
-MISSED_MIN_GAP = 2.0   # seconds of voice with no Line over it that count as Missed speech
+MISSED_MIN_VOICE = 2.0  # seconds of voice with no Line over it that count as Missed speech
 
 
 def missed_stretches(speech, spans):
-    """Parts of the voice stretches [start, end] that no span covers, kept when MISSED_MIN_GAP or longer."""
+    """Parts of the voice stretches [start, end] that no span covers, kept when MISSED_MIN_VOICE or longer."""
     out, spans = [], sorted(spans)
-    gap = lambda a, b: out.append({"start": round(a, 2), "end": round(b, 2)}) if round(b - a, 2) >= MISSED_MIN_GAP else None
+    keep = lambda a, b: out.append({"start": round(a, 2), "end": round(b, 2)}) if round(b - a, 2) >= MISSED_MIN_VOICE else None
     for start, end in speech:
         pos = start
         for s, e in spans:
@@ -107,9 +107,9 @@ def missed_stretches(speech, spans):
                 continue
             if s >= end:
                 break
-            gap(pos, s)
+            keep(pos, s)
             pos = max(pos, e)
-        gap(pos, end)
+        keep(pos, end)
     return out
 
 

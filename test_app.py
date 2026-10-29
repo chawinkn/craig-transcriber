@@ -267,6 +267,13 @@ class ProjectTest(unittest.TestCase):
                           "เพ": [], "เพ ": ["missed speech"]})
         self.assertTrue(got["าง"]["unsure"])
 
+    def test_empty_line_added_at_a_missed_stretch_is_not_missed_speech(self):
+        upload(self.p, "1-a.wav", wav())
+        sid = self.p.state()["speakers"][0]["id"]
+        added = self.p.add_line_at(sid, 10.0, 20.0)
+        line = next(l for l in self.p.state()["lines"] if l["id"] == added["id"])
+        self.assertEqual((line["unsure"], line["reasons"]), (False, []))
+
     def test_missed_speech_comes_after_the_other_reasons_and_editing_clears_it(self):
         got = self.saved(("x", dict(suspect=True, length=10.0, words=[pw("x", 0.1)])), ("าง", dict(length=14.0)))
         self.assertEqual(got["x"]["reasons"], ["unsure word", "looks made up", "missed speech"])
