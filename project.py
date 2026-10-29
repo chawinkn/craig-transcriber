@@ -24,7 +24,9 @@ def srt_time(t):
     return f"{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}:{ms % 60000 // 1000:02d},{ms % 1000:03d}"
 
 
-UNSURE_WORD_PROB = 0.5  # TODO: provisional; tune on real audio in #29
+# Measured (#29) on 219 reviewed Lines of a 33-min Thai meeting, Pathumma: the lowest word probability in a Line was
+# the best of the scores tried; under 0.3 tags 12% of Lines and catches 6 of 17 wrong ones (0 of 17 before).
+UNSURE_WORD_PROB = 0.3
 
 
 def unsure_spans(text, words):
@@ -66,9 +68,9 @@ def too_fast(text, start, end):
 def review_flags(line):
     """reasons: why the Line is unsure, in a fixed order; empty once the text differs from what the model wrote
     (edited, which includes Lines typed in by hand). The made-up causes are worked out again from the text and times,
-    but only for Lines flagged suspect; a flag no rule explains (older runs) reads "looks made up". Lines without
-    words use low confidence. mixed: Thai with English. unsure_words: character spans in the text."""
-    text, conf, words = line["text"], line.get("conf"), line.get("words")
+    but only for Lines flagged suspect; a flag no rule explains (older runs) reads "looks made up". mixed: Thai with
+    English. unsure_words: character spans in the text."""
+    text, words = line["text"], line.get("words")
     edited = text != line.get("orig", text)
     spans = [] if edited or not words else unsure_spans(text, words)
     reasons = []
@@ -79,8 +81,6 @@ def review_flags(line):
             causes = [(repeats(text), "repeated phrase"), (foreign_letters(text), "foreign letters"),
                       (too_fast(text, line.get("start", 0), line.get("end", 0)), "timing")]
             reasons += [r for hit, r in causes if hit] or ["looks made up"]
-        if not words and conf is not None and conf < -0.9:
-            reasons.append("low confidence")
     return {"edited": edited, "unsure_words": spans, "reasons": reasons, "unsure": bool(reasons),
             "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2}
 
