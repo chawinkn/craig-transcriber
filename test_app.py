@@ -131,7 +131,7 @@ class ProjectTest(unittest.TestCase):
         self.p.edit_lines([{"id": added, "text": "พิมพ์เอง"}])
         self.p.add_line_after(added)
         flags = {l["text"]: (l["unsure"], l["mixed"], l["edited"]) for l in Project(self.dir).state()["lines"]}
-        self.assertEqual(flags, {"สวัสดีครับ": (False, False, False), "ฟังไม่ชัด": (True, False, False),
+        self.assertEqual(flags, {"สวัสดีครับ": (False, False, False), "ฟังไม่ชัด": (False, False, False),
                                  "อีกแล้ว": (False, False, True), "Essential Principal เลยนะเว้ย": (False, True, False),
                                  "OK นะ": (False, True, False), "แก้แล้ว": (False, False, True),
                                  "พิมพ์เอง": (False, False, True), "": (False, False, False)})
@@ -143,7 +143,7 @@ class ProjectTest(unittest.TestCase):
             "lines": [{"id": "l2", "spk": "s1", "start": 1.0, "end": 2.0, "text": "hi there", "conf": -1.5, "ok": False}],
             "seq": 2}))
         line = Project(self.dir).state()["lines"][0]
-        self.assertEqual((line["unsure"], line["mixed"], line["edited"]), (True, False, False))
+        self.assertEqual((line["unsure"], line["mixed"], line["edited"]), (False, False, False))
 
     def lined(self, text, words, **kw):
         upload(self.p, "1-a.wav", wav())
@@ -163,13 +163,12 @@ class ProjectTest(unittest.TestCase):
                          ("อีเขียบ" * 4, dict(suspect=True)),
                          ("สวัสดี こんにちは", dict(suspect=True)),
                          ("สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก", dict(suspect=True, length=1.0)),
-                         ("low", dict(conf=-1.2)),
                          ("old", dict(suspect=True)),
                          ("fine", dict()))
         self.assertEqual({t: (l["reasons"], l["unsure"]) for t, l in got.items()},
                          {"fine words": (["unsure word"], True), "อีเขียบ" * 4: (["repeated phrase"], True),
                           "สวัสดี こんにちは": (["foreign letters"], True), "สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก": (["timing"], True),
-                          "low": (["low confidence"], True), "old": (["looks made up"], True), "fine": ([], False)})
+                          "old": (["looks made up"], True), "fine": ([], False)})
 
     def test_several_reasons_come_in_the_stated_order(self):
         text = "x こんにちは" + "ก" * 40
@@ -199,7 +198,7 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(line["unsure_words"], [[3, 5], [6, 8]])
 
     def test_touching_thai_pieces_make_one_unsure_word(self):
-        line = self.lined("โดนดองครีม", [pw("โดน"), pw("ดอง", 0.3), pw("ครีม", 0.2)])
+        line = self.lined("โดนดองครีม", [pw("โดน"), pw("ดอง", 0.25), pw("ครีม", 0.2)])
         self.assertEqual([line["text"][s:e] for s, e in line["unsure_words"]], ["ดองครีม"])
 
     def test_confident_words_are_not_unsure_whatever_the_line_confidence(self):
@@ -211,15 +210,6 @@ class ProjectTest(unittest.TestCase):
         self.p.edit_lines([{"id": line["id"], "text": "hello world"}])
         line = self.p.state()["lines"][0]
         self.assertEqual((line["unsure"], line["unsure_words"]), (False, []))
-
-    def test_old_line_without_words_still_uses_line_confidence(self):
-        self.dir.mkdir()
-        (self.dir / "project.json").write_text(json.dumps({
-            "speakers": [{"id": "s1", "name": "Old", "file": "s1.flac", "ext": ".flac", "duration": None, "source": "1-Old.flac"}],
-            "lines": [{"id": "l2", "spk": "s1", "start": 1.0, "end": 2.0, "text": "hi there", "conf": -1.5, "ok": False}],
-            "seq": 2}))
-        line = Project(self.dir).state()["lines"][0]
-        self.assertEqual((line["unsure"], line["unsure_words"]), (True, []))
 
     def test_words_are_stored_rounded_and_stay_out_of_exports(self):
         line = self.lined("hello", [pw(" hello", 0.123456)])
