@@ -176,7 +176,8 @@ class ProjectTest(unittest.TestCase):
 
 class HallucinationRuleTest(unittest.TestCase):
     def test_flags_repeats_and_foreign_scripts(self):
-        for text in ["แก ร ั ติ เลย อี เข ีย บ อี เข ีย บ อี เข ีย บ ไม่ ทัน พอ เล่น", "อีเขียบ อีเขียบ อีเขียบ",
+        for text in ["แก ร ั ติ เลย อี เข ีย บ อี เข ีย บ อี เข ีย บ อี เข ีย บ ไม่ ทัน พอ เล่น", "อีเขียบ อีเขียบ อีเขียบ อีเขียบ",
+                     "กี่หน้ากี่หน้ากี่หน้ากี่หน้า",
                      "además habíaон", "складดิงตรงนี้", "เออ ตอนนี้一點ก็เดี๋ยว", "Mike is cursing too, Γειά"]:
             self.assertTrue(looks_hallucinated(text), text)
 
@@ -184,7 +185,7 @@ class HallucinationRuleTest(unittest.TestCase):
         for text in ["เรียนแพทย์ดีกว่า", "No Way", "KMIT Open Courtware", "Essential Principal เลยนะเว้ย",
                      "อ่า ฮ่า ฮ่า ฮ่า", "เล่นๆ ตอนข้าง ตรงชีพหว่ะ", "เสียไป ๆ บางเมื่อ ๆ ๆ เยอะ ๆ", "เล่มละพัน 1,000 บาท?",
                      "Sami in år 2000", "Tiếng Việt", "นะนะนะนะนะ", "ไม่ไม่ไม่ไม่", "ฮ่าฮ่าฮ่าฮ่า", "ha ha ha ha",
-                     "555555555", "1000000000"]:
+                     "555555555", "1000000000", "กี่หน้ากี่หน้ากี่หน้า", "อีเขียบ อีเขียบ อีเขียบ"]:
             self.assertFalse(looks_hallucinated(text), text)
 
 
@@ -268,6 +269,12 @@ class LinesFromSegmentsTest(unittest.TestCase):
                                         {**seg(60.0, "เออ แพงจังอะ"), "end": 61.0}]))
         self.assertEqual([(l["text"], l["suspect"]) for l in out],
                          [("สินค้า คงเหลือ สิบเอ็ด บาท", True), ("เออ แพงจังอะ", False)])
+
+    def test_repeat_needs_four_in_a_row_and_short_lines_are_never_too_fast(self):
+        out = list(lines_from_segments([{**seg(0, "กี่หน้ากี่หน้ากี่หน้า"), "end": 3.0}, {**seg(3, "กี่หน้ากี่หน้ากี่หน้ากี่หน้า"), "end": 6.0},
+                                        {**seg(6, "ขอบคุณครับ"), "end": 6.1}, {**seg(7, "ขอบคุณครับขอบคุณครับ"), "end": 7.5},
+                                        {**seg(9, "สวัสดีครับ ผมชื่อสมชาย"), "end": 9.5}, {**seg(10, "Gamma Γειά"), "end": 12.0}]))
+        self.assertEqual([l["suspect"] for l in out], [False, True, False, True, True, True])
 
     def test_split_lines_get_their_own_confidence(self):
         words = [w(" ดี", 0.0, 0.4, 0.9), w(" มาก", 0.4, 0.8, 0.9), w(" xq", 3.0, 3.4, 0.05)]

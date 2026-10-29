@@ -80,8 +80,8 @@ def model_catalog(data_dir):
 
 
 def looks_hallucinated(text):
-    """A phrase of 4+ characters repeated 3+ times in a row, or letters that are neither Thai nor Latin."""
-    if re.search(r"(.{4,}?)\1{2,}", re.sub(r"\s+", "", text)):
+    """A phrase of 4+ characters repeated 4+ times in a row, or letters that are neither Thai nor Latin."""
+    if re.search(r"(.{4,}?)\1{3,}", re.sub(r"\s+", "", text)):
         return True
     # Latin: Basic through Extended-B (U+024F) plus Extended Additional (U+1E00-1EFF, Vietnamese).
     return any(ch.isalpha() and not ("\u0e00" <= ch <= "\u0e7f" or ch <= "\u024f" or "\u1e00" <= ch <= "\u1eff")
@@ -147,7 +147,7 @@ def _spans(words):
 
 def _line(start, end, text, conf):
     chars = len(re.sub(r"\s+", "", text))
-    too_fast = chars >= 8 and chars / max(end - start, 0.01) > LINE_MAX_CPS
+    too_fast = chars >= 20 and chars / max(end - start, 0.01) > LINE_MAX_CPS
     return {"start": start, "end": end, "text": text, "conf": conf, "suspect": too_fast or looks_hallucinated(text)}
 
 
