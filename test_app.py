@@ -198,6 +198,10 @@ class ProjectTest(unittest.TestCase):
         line = self.lined("no no no", [pw(" no"), pw(" no", 0.1), pw(" no", 0.1)])
         self.assertEqual(line["unsure_words"], [[3, 5], [6, 8]])
 
+    def test_touching_thai_pieces_make_one_unsure_word(self):
+        line = self.lined("โดนดองครีม", [pw("โดน"), pw("ดอง", 0.3), pw("ครีม", 0.2)])
+        self.assertEqual([line["text"][s:e] for s, e in line["unsure_words"]], ["ดองครีม"])
+
     def test_confident_words_are_not_unsure_whatever_the_line_confidence(self):
         line = self.lined("hello world", [pw(" hello"), pw(" world", 0.5)], conf=-2.0)
         self.assertEqual((line["unsure"], line["unsure_words"]), (False, []))

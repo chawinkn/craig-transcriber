@@ -28,7 +28,7 @@ UNSURE_WORD_PROB = 0.5  # TODO: provisional; tune on real audio in #29
 
 
 def unsure_spans(text, words):
-    """[start, end) character spans in text of the words under UNSURE_WORD_PROB, found in order."""
+    """[start, end) character spans in text of the words under UNSURE_WORD_PROB, found in order; touching ones merge."""
     spans, pos = [], 0
     for w in words:
         piece = w["text"].strip()
@@ -37,7 +37,10 @@ def unsure_spans(text, words):
             continue
         pos = i + len(piece)
         if w["prob"] < UNSURE_WORD_PROB:
-            spans.append([i, pos])
+            if spans and spans[-1][1] == i:     # Thai word pieces touch: show them as one word
+                spans[-1][1] = pos
+            else:
+                spans.append([i, pos])
     return spans
 
 
