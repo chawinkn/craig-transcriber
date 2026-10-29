@@ -13,7 +13,7 @@ from pathlib import Path
 
 from project import Project
 import convert_model
-from transcribe import MODEL_FILES, EngineCrashed, Job, ProcessEngine, WhisperEngine, lines_from_segments, looks_hallucinated, model_catalog
+from transcribe import CLIP_PAD, MODEL_FILES, EngineCrashed, Job, ProcessEngine, WhisperEngine, lines_from_segments, looks_hallucinated, model_catalog
 
 
 def wav(seconds=0.2):
@@ -100,6 +100,24 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(self.p.speaker(a)["duration"], 12.5)
         self.p.replace_lines("gone", [seg(0, "x")])
         self.assertEqual(len(self.p.state()["lines"]), 2)
+
+    def test_replace_stretch_swaps_only_the_lines_whose_midpoint_is_inside(self):
+        a, b = self.two()
+        self.p.replace_lines(a, [seg(0, "a"), seg(5, "b"), seg(8.4, "edge"), seg(10, "c"), seg(20, "d")], 30.0, {"model": "m"}, [[0.0, 25.0]])
+        self.p.dismiss_missed(a, 6, 8)
+        by = {l["text"]: l["id"] for l in self.p.state()["lines"]}
+        self.p.edit_lines([{"id": by["a"], "text": "a fixed"}, {"id": by["d"], "ok": True}])
+        self.p.replace_stretch(a, 9, 12, [seg(8, "outside"), seg(9.6, "new1"), seg(11, "new2")])
+        st = Project(self.dir).state()
+        self.assertEqual([l["text"] for l in st["lines"] if l["spk"] == a], ["a fixed", "b", "edge", "new1", "new2", "d"])
+        self.assertEqual([l["text"] for l in st["lines"] if l["spk"] == b], ["other"])
+        new = {l["text"]: l for l in st["lines"]}
+        self.assertEqual((new["a fixed"]["edited"], new["d"]["ok"]), (True, True))
+        self.assertEqual((new["new1"]["ok"], new["new1"]["edited"], new["new1"]["id"] in by.values()), (False, False, False))
+        sp = self.p.speaker(a)
+        self.assertEqual((sp["run"], sp["speech"], sp["dismissed"], sp["duration"]), ({"model": "m"}, [[0.0, 25.0]], [[6, 8]], 30.0))
+        self.p.replace_stretch("gone", 0, 99, [seg(0, "x")])
+        self.assertEqual(len(self.p.state()["lines"]), 7)
 
     def test_touched_speakers_are_reported(self):
         a, b = self.two()
@@ -511,6 +529,30 @@ class WhisperEngineTest(unittest.TestCase):
         self.assertEqual(list(segs)[0]["words"], [{"start": 0.0, "end": 0.5, "text": " hi", "prob": 0.9}])
 
 
+    def test_clip_cuts_the_padded_part_and_keeps_times_in_the_whole_audio(self):
+        word = type("W", (), {"start": 0.5, "end": 1.0, "word": " hi", "probability": 0.9})
+        segment = type("S", (), {"start": 0.5, "end": 1.0, "text": " hi", "avg_logprob": -0.2, "no_speech_prob": 0.1,
+                                 "words": [word]})
+        got = []
+
+        class Model:
+            def transcribe(self, audio, **kw):
+                got.append((len(audio), kw))
+                return iter([segment]), type("Info", (), {"language": "th"})
+
+        class Engine(WhisperEngine):
+            load_audio = staticmethod(lambda path: [0.0] * 16000 * 100)
+
+            def _load(self, prefer_cpu):
+                self._model, self.device = Model(), "cpu"
+        engine = Engine("m", True, lambda **kw: None)
+        for clip, secs, first in (((10, 20), 12, 9.0), ((0.5, 5), 6.0, 0.0), ((97, 99.5), 4.0, 96.0)):
+            dur, segs = engine.transcribe("a.wav", "th", "", clip)
+            seg0 = list(segs)[0]
+            self.assertEqual((dur, got[-1][0] / 16000, seg0["start"], seg0["words"][0]["end"]), (100.0, secs, first + 0.5, first + 1.0))
+        self.assertNotIn("clip_timestamps", got[-1][1])
+        self.assertEqual(CLIP_PAD, 1.0)
+
     def test_voice_lists_seconds_with_voice(self):
         vad = types.ModuleType("faster_whisper.vad")
         vad.VadOptions = lambda **kw: kw
@@ -535,7 +577,9 @@ class ChildEngine:
         self.model_name, self.device, self.language = model_name, "cpu" if prefer_cpu else "cuda", ""
         on_status(message=f"loaded on {self.device}")
 
-    def transcribe(self, path, language, prompt):
+    def transcribe(self, path, language, prompt, clip=None):
+        if self.model_name == "clip":
+            return 4.0, iter([seg(clip[0] if clip else 0, f"clip {clip}")])
         if self.model_name == "crash-always":
             os._exit(134)
         if self.model_name == "crash-once" and not os.path.exists(path + ".crashed"):
@@ -573,6 +617,11 @@ class ProcessEngineTest(unittest.TestCase):
         self.assertEqual((dur, engine.device, engine.language, len(texts)), (4.0, "cuda", "th", 2))
         self.assertNotEqual(texts[0].split()[1], str(os.getpid()))
         self.assertIn({"message": "loaded on cuda"}, notes)
+
+    def test_clip_goes_over_the_pipe(self):
+        engine = IsolatedEngine("clip", True, lambda **kw: None)
+        self.assertEqual([s["text"] for s in engine.transcribe("a.wav", "th", "", (3.0, 4.5))[1]], ["clip (3.0, 4.5)"])
+        self.assertEqual([s["text"] for s in engine.transcribe("a.wav", "th", "")[1]], ["clip None"])
 
     def test_voice_goes_over_the_pipe_and_errors_and_crashes_come_back(self):
         engine = IsolatedEngine("ok", True, lambda **kw: None)
@@ -617,7 +666,7 @@ class FakeEngine:
     def available():
         return True
 
-    def transcribe(self, path, language, prompt):
+    def transcribe(self, path, language, prompt, clip=None):
         return 4.0, iter(self.segments)
 
     def voice(self, path):
@@ -660,13 +709,13 @@ class JobTest(unittest.TestCase):
         class Boom(FakeEngine):
             speech = [[9.0, 10.0]]
 
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 raise RuntimeError("boom")
 
         class Cancelling(Boom):
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 FakeEngine.job.cancel()
-                return FakeEngine.transcribe(self, path, language, prompt)
+                return FakeEngine.transcribe(self, path, language, prompt, clip)
         for engine_cls in (Boom, Cancelling):
             self.run_job(engine_cls)
             self.assertEqual(self.p.speaker(self.sid)["speech"], [[0.0, 3.5]])
@@ -692,6 +741,89 @@ class JobTest(unittest.TestCase):
         self.assertIn("stopped unexpectedly", st["error"])
         self.assertEqual([t for _, t in texts(self.p)], ["old"])
 
+    def stretch_setup(self):
+        self.p.replace_lines(self.sid, [seg(0, "a"), seg(5, "b"), seg(10, "c"), seg(20, "d")], 30.0, {"model": "old"}, [[0.0, 25.0]])
+        by = {l["text"]: l["id"] for l in self.p.state()["lines"]}
+        self.p.edit_lines([{"id": by["c"], "text": "c fixed"}, {"id": by["b"], "ok": True}])
+        self.before = self.p.state()
+        return by
+
+    def stretch_job(self, engine_cls, start=9, end=12, **opts):
+        job = Job(self.p, engine_cls)
+        FakeEngine.job = job
+        self.assertEqual(job.start({"speakers": [self.sid], "start": start, "end": end, "model": "m", **opts}), {"ok": True})
+        job._thread.join(10)
+        return job
+
+    def test_stretch_run_asks_for_the_stretch_only_and_changes_only_lines_inside(self):
+        self.stretch_setup()
+        asked = []
+
+        class Clipped(FakeEngine):
+            segments = [seg(8.0, "outside here"), seg(9.5, "new one"), seg(10.5, "new two"), seg(12.0, "after here")]
+            speech = [[99.0, 100.0]]
+
+            def transcribe(self, path, language, prompt, clip=None):
+                asked.append(clip)
+                lo, hi = clip[0] - CLIP_PAD, clip[1] + CLIP_PAD
+                return 30.0, iter([s for s in self.segments if s["start"] >= lo and s["end"] <= hi])
+
+            def voice(self, path):
+                raise AssertionError("a stretch run must not look for voice")
+        job = self.stretch_job(Clipped, language="th", prompt="ขนุน")
+        st = job.status()
+        self.assertEqual((st["phase"], asked, st["dur"], st["pos"]), ("done", [(9.0, 12.0)], 3.0, 3.0))
+        after = Project(self.p.dir).state()
+        self.assertEqual([l["text"] for l in after["lines"]], ["a", "b", "new one", "new two", "d"])
+        keep = lambda s: [l for l in s["lines"] if l["text"] in ("a", "b", "d")]
+        self.assertEqual(keep(after), keep(self.before))
+        self.assertTrue(all(not l["ok"] and not l["edited"] for l in after["lines"] if l["text"] in ("new one", "new two")))
+        sp = self.p.speaker(self.sid)
+        self.assertEqual((sp["run"], sp["speech"], sp["duration"]), ({"model": "old"}, [[0.0, 25.0]], 30.0))
+
+    def test_failed_cancelled_or_crashed_stretch_run_changes_nothing(self):
+        self.stretch_setup()
+        saved = lambda: (Project(self.p.dir).state(), self.p.speaker(self.sid))
+
+        class Boom(FakeEngine):
+            def transcribe(self, path, language, prompt, clip=None):
+                def gen():
+                    yield seg(10, "partial")
+                    raise RuntimeError("boom")
+                return 30.0, gen()
+
+        class Cancelling(FakeEngine):
+            def transcribe(self, path, language, prompt, clip=None):
+                def gen():
+                    yield seg(10, "first")
+                    FakeEngine.job.cancel()
+                    yield seg(11, "second")
+                return 30.0, gen()
+        want = saved()
+        for engine_cls, phase in ((Boom, "error"), (Cancelling, "cancelled")):
+            self.assertEqual(self.stretch_job(engine_cls).status()["phase"], phase)
+            self.assertEqual(saved(), want)
+        st = self.stretch_job(IsolatedEngine, model="crash-always", device="cpu").status()
+        self.assertEqual(st["phase"], "error")
+        self.assertIn("stopped unexpectedly", st["error"])
+        self.assertEqual(saved(), want)
+
+    def test_stretch_run_goes_through_the_child_process(self):
+        self.stretch_setup()
+        self.assertEqual(self.stretch_job(IsolatedEngine, model="clip", device="cpu").status()["phase"], "done")
+        self.assertEqual([l["text"] for l in self.p.state()["lines"]], ["a", "b", "clip (9.0, 12.0)", "d"])
+
+    def test_stretch_needs_exactly_one_person_and_a_real_range(self):
+        upload(self.p, "2-b.wav", wav())
+        ids = [s["id"] for s in self.p.state()["speakers"]]
+        job = Job(self.p, FakeEngine)
+        for opts in ({"speakers": ids, "start": 1, "end": 2}, {"speakers": ["nope"], "start": 1, "end": 2},
+                     {"speakers": [], "start": 1, "end": 2}, {"speakers": ids[:1], "start": 1},
+                     {"speakers": ids[:1], "start": 3, "end": 2}, {"speakers": ids[:1], "start": -1, "end": 2},
+                     {"speakers": ids[:1], "start": "1", "end": 2}, {"speakers": ids[:1], "start": 1, "end": 2, "check": True}):
+            self.assertIn("error", job.start(opts), opts)
+        self.assertEqual(job.status(), {})
+
     def check_job(self, engine_cls, ids=None, **opts):
         job = Job(self.p, engine_cls)
         FakeEngine.job = job
@@ -706,7 +838,7 @@ class JobTest(unittest.TestCase):
         before = self.p.state()
 
         class NoTranscribing(FakeEngine):
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 raise AssertionError("a check must not transcribe")
         st = self.check_job(NoTranscribing).status()
         after = Project(self.p.dir).state()
@@ -792,9 +924,9 @@ class JobTest(unittest.TestCase):
         seen = []
 
         class Watching(FakeEngine):
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 seen.append(FakeEngine.job.status()["audio_done"])
-                return super().transcribe(path, language, prompt)
+                return super().transcribe(path, language, prompt, clip)
         job = Job(self.p, Watching)
         FakeEngine.job = job
         self.assertEqual(job.start({"speakers": ids, "model": "m"}), {"ok": True})
@@ -805,9 +937,9 @@ class JobTest(unittest.TestCase):
         got = []
 
         class Listening(FakeEngine):
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 got.append((language, prompt))
-                return super().transcribe(path, language, prompt)
+                return super().transcribe(path, language, prompt, clip)
         self.run_job(Listening, language="th", prompt="  ขนุน, Go Fiber ")
         self.assertEqual(got, [("th", "ขนุน, Go Fiber")])
 
@@ -824,20 +956,20 @@ class JobTest(unittest.TestCase):
         before = self.p.speaker(self.sid)["run"]
 
         class Boom(FakeEngine):
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 raise RuntimeError("boom")
 
         class Cancelling(FakeEngine):
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 FakeEngine.job.cancel()
-                return super().transcribe(path, language, prompt)
+                return super().transcribe(path, language, prompt, clip)
         for engine_cls in (Boom, Cancelling):
             self.run_job(engine_cls, language="en")
             self.assertEqual(self.p.speaker(self.sid)["run"], before)
 
     def test_failure_keeps_old_lines(self):
         class Boom(FakeEngine):
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 def gen():
                     yield seg(0, "partial")
                     raise RuntimeError("boom")
@@ -850,7 +982,7 @@ class JobTest(unittest.TestCase):
 
     def test_cancel_keeps_old_lines(self):
         class Cancelling(FakeEngine):
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 def gen():
                     yield seg(0, "first")
                     FakeEngine.job.cancel()
@@ -868,10 +1000,10 @@ class JobTest(unittest.TestCase):
             def use_cpu(self):
                 self.device = "cpu"
 
-            def transcribe(self, path, language, prompt):
+            def transcribe(self, path, language, prompt, clip=None):
                 if self.device == "cuda":
                     raise RuntimeError("cuda died")
-                return super().transcribe(path, language, prompt)
+                return super().transcribe(path, language, prompt, clip)
         st = self.run_job(Cuda).status()
         self.assertEqual((st["phase"], st["device"]), ("done", "cpu"))
         self.assertIn("cuda died", st["note"])

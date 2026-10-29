@@ -356,15 +356,29 @@ class Project:
             sp.pop("deleted_by_hand", None)
             sp.pop("dismissed", None)
             self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid]
-            for s in segments:
-                conf = s.get("conf")
-                self._p["lines"].append({"id": self._new_id("l"), "spk": sid, "start": round(float(s["start"]), 2),
-                                         "end": round(float(s["end"]), 2), "text": s["text"], "orig": s["text"],
-                                         "conf": None if conf is None else round(float(conf), 3), "ok": False,
-                                         "suspect": bool(s.get("suspect")),
-                                         "words": [{"text": x["text"], "prob": round(float(x["prob"]), 3)}
-                                                   for x in s.get("words") or []]})
+            self._add_lines(sid, segments)
             self._save()
+
+    def replace_stretch(self, sid, start, end, segments):
+        """Swap this Speaker's Lines whose midpoint is in [start, end] for the new ones whose midpoint is too;
+        everything else, and the Speaker's run, speech and dismissed stretches, stays."""
+        inside = lambda l: start <= (l["start"] + l["end"]) / 2 <= end
+        with self._lock:
+            if not self._speaker(sid):
+                return
+            self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid or not inside(l)]
+            self._add_lines(sid, [s for s in segments if inside(s)])
+            self._save()
+
+    def _add_lines(self, sid, segments):
+        for s in segments:
+            conf = s.get("conf")
+            self._p["lines"].append({"id": self._new_id("l"), "spk": sid, "start": round(float(s["start"]), 2),
+                                     "end": round(float(s["end"]), 2), "text": s["text"], "orig": s["text"],
+                                     "conf": None if conf is None else round(float(conf), 3), "ok": False,
+                                     "suspect": bool(s.get("suspect")),
+                                     "words": [{"text": x["text"], "prob": round(float(x["prob"]), 3)}
+                                               for x in s.get("words") or []]})
 
     def set_speech(self, sid, speech):
         with self._lock:
