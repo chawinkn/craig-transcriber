@@ -159,12 +159,12 @@ class ProjectTest(unittest.TestCase):
         return {l["text"]: l for l in Project(self.dir).state()["lines"]}
 
     def test_each_cause_gives_its_own_reason(self):
-        got = self.saved(("fine words", dict(words=[pw(" fine"), pw(" words", 0.1)])),
+        got = self.saved(("fine words", dict(length=2.0, words=[pw(" fine"), pw(" words", 0.1)])),
                          ("อีเขียบ" * 4, dict(suspect=True)),
                          ("สวัสดี こんにちは", dict(suspect=True)),
                          ("สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก", dict(suspect=True, length=1.0)),
-                         ("old", dict(suspect=True)),
-                         ("fine", dict()))
+                         ("old", dict(suspect=True, length=2.0)),
+                         ("fine", dict(length=2.0)))
         self.assertEqual({t: (l["reasons"], l["unsure"]) for t, l in got.items()},
                          {"fine words": (["unsure word"], True), "อีเขียบ" * 4: (["repeated phrase"], True),
                           "สวัสดี こんにちは": (["foreign letters"], True), "สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก": (["timing"], True),
@@ -174,6 +174,21 @@ class ProjectTest(unittest.TestCase):
         text = "x こんにちは" + "ก" * 40
         got = self.saved((text, dict(suspect=True, length=1.0, words=[pw("x", 0.1), pw(" " + text[2:])])))
         self.assertEqual(got[text]["reasons"], ["unsure word", "repeated phrase", "foreign letters", "timing"])
+
+    def test_long_line_with_far_too_little_text_is_missed_speech(self):
+        got = self.saved(("าง", dict(length=14.0)), ("นี้", dict(length=9.0)),
+                         ("a perfectly normal line of speech", dict(length=14.0)),
+                         ("เพ", dict(length=3.9)), ("เพ ", dict(length=4.0)))
+        self.assertEqual({t: l["reasons"] for t, l in got.items()},
+                         {"าง": ["missed speech"], "นี้": ["missed speech"], "a perfectly normal line of speech": [],
+                          "เพ": [], "เพ ": ["missed speech"]})
+        self.assertTrue(got["าง"]["unsure"])
+
+    def test_missed_speech_comes_after_the_other_reasons_and_editing_clears_it(self):
+        got = self.saved(("x", dict(suspect=True, length=10.0, words=[pw("x", 0.1)])), ("าง", dict(length=14.0)))
+        self.assertEqual(got["x"]["reasons"], ["unsure word", "looks made up", "missed speech"])
+        self.p.edit_lines([{"id": l["id"], "text": t + " แก้"} for t, l in got.items()])
+        self.assertEqual([l["reasons"] for l in self.p.state()["lines"]], [[], []])
 
     def test_editing_clears_unsure_reasons_and_underlines(self):
         got = self.saved(("a b", dict(words=[pw(" a", 0.1), pw(" b")])), ("こんにちは", dict(suspect=True)), ("hello", dict(conf=-1.2)))

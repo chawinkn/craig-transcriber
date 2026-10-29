@@ -47,6 +47,7 @@ def unsure_spans(text, words):
 
 
 LINE_MAX_CPS = 30.0  # faster than anyone speaks
+MISSED_MIN_SECONDS, MISSED_MAX_CPS = 4.0, 2.0  # on the 2026-10-29 recording: 3 Lines, all real dropped speech
 
 
 def repeats(text):
@@ -65,11 +66,16 @@ def too_fast(text, start, end):
     return chars >= 20 and chars / max(end - start, 0.01) > LINE_MAX_CPS
 
 
+def too_slow(text, start, end):
+    return end - start >= MISSED_MIN_SECONDS and len(re.sub(r"\s+", "", text)) / (end - start) < MISSED_MAX_CPS
+
+
 def review_flags(line):
     """reasons: why the Line is unsure, in a fixed order; empty once the text differs from what the model wrote
     (edited, which includes Lines typed in by hand). The made-up causes are worked out again from the text and times,
     but only for Lines flagged suspect; a flag no rule explains (older runs) reads "looks made up". mixed: Thai with
-    English. unsure_words: character spans in the text."""
+    English. unsure_words: character spans in the text. "missed speech" comes last: a Line of 4 s or more with under
+    2 characters per second."""
     text, words = line["text"], line.get("words")
     edited = text != line.get("orig", text)
     spans = [] if edited or not words else unsure_spans(text, words)
@@ -81,6 +87,8 @@ def review_flags(line):
             causes = [(repeats(text), "repeated phrase"), (foreign_letters(text), "foreign letters"),
                       (too_fast(text, line.get("start", 0), line.get("end", 0)), "timing")]
             reasons += [r for hit, r in causes if hit] or ["looks made up"]
+        if too_slow(text, line.get("start", 0), line.get("end", 0)):
+            reasons.append("missed speech")
     return {"edited": edited, "unsure_words": spans, "reasons": reasons, "unsure": bool(reasons),
             "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2}
 
