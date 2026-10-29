@@ -177,7 +177,9 @@ class Project:
         touched = {l["spk"] for l in st["lines"] if l["ok"] or l["edited"]}
         for sp in st["speakers"]:
             sp["touched"] = sp["id"] in touched or bool(sp.pop("deleted_by_hand", False))
-            sp["missed"] = missed_stretches(sp.get("speech") or [], [(l["start"], l["end"]) for l in st["lines"] if l["spk"] == sp["id"]])
+            gone = sp.get("dismissed") or []
+            sp["missed"] = [m for m in missed_stretches(sp.get("speech") or [], [(l["start"], l["end"]) for l in st["lines"] if l["spk"] == sp["id"]])
+                            if not any(a <= (m["start"] + m["end"]) / 2 <= b for a, b in gone)]
         return st
 
     def speaker(self, sid):
@@ -292,6 +294,24 @@ class Project:
             self._save()
             return dict(line)
 
+    def add_line_at(self, sid, start, end):
+        with self._lock:
+            nums = all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (start, end))
+            if not self._speaker(sid) or not nums or not 0 <= start < end:
+                return None
+            line = {"id": self._new_id("l"), "spk": sid, "start": round(float(start), 2),
+                    "end": round(float(end), 2), "text": "", "orig": "", "conf": None, "ok": False}
+            self._p["lines"].append(line)
+            self._save()
+            return dict(line)
+
+    def dismiss_missed(self, sid, start, end):
+        with self._lock:
+            sp = self._speaker(sid)
+            if sp and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (start, end)):
+                sp.setdefault("dismissed", []).append([start, end])
+                self._save()
+
     def delete_line(self, line_id):
         with self._lock:
             line = self._line(line_id)
@@ -334,6 +354,7 @@ class Project:
             if speech is not None:
                 sp["speech"] = speech
             sp.pop("deleted_by_hand", None)
+            sp.pop("dismissed", None)
             self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid]
             for s in segments:
                 conf = s.get("conf")

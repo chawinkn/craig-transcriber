@@ -194,11 +194,14 @@ function shown(){const ls=visible();return $('#filter').value==='mixed'?ls:[...l
 function nextCheck(id){
   const v=shown(),nx=v.slice(v.findIndex(x=>x.id===id)+1).find(x=>x.row||(x.unsure&&!x.ok));if(!nx)return;
   const e=document.querySelector(`[data-id="${nx.id}"]`);e?.querySelector(nx.row?'.play':'textarea')?.focus();e?.scrollIntoView({block:'center',behavior:'smooth'});playRange(nx)}
+function gone(r){const s=spk(r.spk);s.missed=s.missed.filter(m=>m.start!==r.start||m.end!==r.end)}
 function missedRow(r){
   const sp=spk(r.spk), play=el('button',{class:'play',onclick:()=>playRange(r)},'▶');
   play.addEventListener('keydown',e=>{if(e.altKey&&e.key==='ArrowDown'){e.preventDefault();nextCheck(r.id)}});
   return el('div',{class:'line missed','data-id':r.id},el('div',{class:'meta'},el('div',{},play),el('div',{class:'who',style:'color:'+col(r.spk)},sp?sp.name:'?'),el('div',{class:'t'},fmt(r.start)+' – '+fmt(r.end))),
-    el('div',{},el('b',{},'Missed speech'),` · ${(r.end-r.start).toFixed(1)} s of voice with no line`))}
+    el('div',{},el('b',{},'Missed speech'),` · ${(r.end-r.start).toFixed(1)} s of voice with no line`,el('div',{class:'acts'},
+      el('button',{onclick:async()=>{const l=await api('/api/line/add',{spk:r.spk,start:r.start,end:r.end});gone(r);S.lines.push(l.line);S.lines.sort((a,b)=>a.start-b.start);renderLines();document.querySelector(`[data-id="${l.line.id}"] textarea`)?.focus()}},'+ add Line here'),
+      el('button',{onclick:async()=>{await api('/api/missed/dismiss',{spk:r.spk,start:r.start,end:r.end});gone(r);renderLines()}},'dismiss'))))}
 function counts(){const n=S.lines.length,d=S.lines.filter(l=>l.ok).length;$('#counts').textContent=n?`${n} lines · ${d} reviewed`:''}
 function autosize(t){t.style.height='auto';t.style.height=Math.max(40,t.scrollHeight+2)+'px'}
 function renderLines(){

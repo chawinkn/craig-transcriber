@@ -133,6 +133,34 @@ class ProjectTest(unittest.TestCase):
                                      {"start": 61, "end": 64}])
         self.assertEqual(missed(b), [])
 
+    def test_dismissed_missed_speech_stays_gone_until_the_next_full_run(self):
+        a, _ = self.two()
+        self.p.replace_lines(a, [seg(0, "x")], speech=[[0, 30]])
+        missed = lambda: next(s["missed"] for s in Project(self.dir).state()["speakers"] if s["id"] == a)
+        self.assertEqual(missed(), [{"start": 1, "end": 30}])
+        self.p.dismiss_missed(a, 1.001, 29.999)
+        self.assertEqual(missed(), [])
+        self.p.replace_lines(a, [seg(0, "x")])
+        self.assertEqual(missed(), [{"start": 1, "end": 30}])
+
+    def test_dismissing_one_missed_stretch_keeps_the_others(self):
+        a, _ = self.two()
+        self.p.replace_lines(a, [seg(0, "x"), seg(5, "y")], speech=[[0, 30]])
+        self.p.dismiss_missed(a, 6, 30)
+        self.assertEqual(self.p.state()["speakers"][0]["missed"], [{"start": 1, "end": 5}])
+        self.p.dismiss_missed("nope", 1, 5)
+
+    def test_add_line_at_covers_the_missed_stretch(self):
+        a, b = self.two()
+        self.p.replace_lines(a, [seg(0, "x")], speech=[[0, 30]])
+        line = self.p.add_line_at(a, 1, 30)
+        self.assertEqual((line["spk"], line["start"], line["end"], line["text"], line["orig"]), (a, 1, 30, "", ""))
+        st = Project(self.dir).state()
+        self.assertIn(line["id"], [l["id"] for l in st["lines"]])
+        self.assertEqual(st["speakers"][0]["missed"], [])
+        self.assertIsNone(self.p.add_line_at("nope", 1, 5))
+        self.assertIsNone(self.p.add_line_at(b, 5, 5))
+
     def test_speaker_without_speech_has_no_missed_speech_and_exports_ignore_it(self):
         a, b = self.two()
         before = [self.p.export(k) for k in ("txt", "srt", "json")]
