@@ -31,6 +31,7 @@ select,input[type=text]{border:1px solid var(--line);background:var(--card);bord
 details summary{cursor:pointer;color:var(--accent)}
 .bar2{position:sticky;top:0;z-index:5;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:10px 0;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .line{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:10px 6px;border-top:1px solid var(--line);border-left:4px solid transparent}
+.line.missed{border:1px dashed var(--muted);border-left-width:4px;border-radius:8px;margin:4px 0;color:var(--muted)}
 .line.playing{background:rgba(36,87,214,.08);border-left-color:var(--accent)}.line.done{opacity:.72}
 .meta{font-size:14px}.meta .who{font-weight:700}.meta .t{color:var(--muted);font-variant-numeric:tabular-nums}
 .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.tag{font-size:11.5px;border-radius:5px;padding:0 6px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}.tag.low{color:var(--warn);border-color:var(--warn)}.why{font-size:11.5px;color:var(--muted);flex-basis:100%}
@@ -69,7 +70,7 @@ textarea:focus{outline:2px solid var(--accent);border-color:transparent}
 <div id="jobEnd"></div></section>
 
 <section id="s3"><h2><span class="num">3</span>Check and fix</h2>
-<p class="sub">Press ▶ on a line to hear it. Type in the box to fix the words. Tick <b>reviewed</b> when a line is right, or press <b>Alt+Enter</b> to tick it and play the next line. <b>Alt+↓</b> jumps to the next unsure line. Edits save automatically.</p>
+<p class="sub">Press ▶ on a line to hear it. Type in the box to fix the words. Tick <b>reviewed</b> when a line is right, or press <b>Alt+Enter</b> to tick it and play the next line. <b>Alt+↓</b> jumps to the next unsure line or <b>Missed speech</b>: a dashed row where someone spoke but no line holds the words. Edits save automatically.</p>
 <div class="bar2" id="tools">
  <button id="halt">■ Stop audio</button>
  <label>Speed <select id="rate"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option></select></label>
@@ -188,11 +189,22 @@ const pend=new Map();let saveT=null;
 function queue(id,patch){pend.set(id,Object.assign(pend.get(id)||{id},patch));$('#saveState').textContent='Saving…';clearTimeout(saveT);saveT=setTimeout(flush,600)}
 async function flush(){const u=[...pend.values()];pend.clear();if(!u.length)return;try{await api('/api/lines',{updates:u});$('#saveState').textContent='Saved ✓'}catch(e){$('#saveState').textContent='⚠ Not saved: '+e.message}}
 function visible(){const f=$('#filter').value;return S.lines.filter(l=>f==='all'||(f==='todo'&&!l.ok)||(f==='check'&&!l.ok&&l.unsure)||(f==='mixed'&&l.mixed))}
+const rows=()=>S.speakers.flatMap(s=>(s.missed||[]).map(m=>({row:true,id:`m${s.id}-${m.start}`,spk:s.id,start:m.start,end:m.end})));
+function shown(){const ls=visible();return $('#filter').value==='mixed'?ls:[...ls,...rows()].sort((a,b)=>a.start-b.start)}
+function nextCheck(id){
+  const v=shown(),nx=v.slice(v.findIndex(x=>x.id===id)+1).find(x=>x.row||(x.unsure&&!x.ok));if(!nx)return;
+  const e=document.querySelector(`[data-id="${nx.id}"]`);e?.querySelector(nx.row?'.play':'textarea')?.focus();e?.scrollIntoView({block:'center',behavior:'smooth'});playRange(nx)}
+function missedRow(r){
+  const sp=spk(r.spk), play=el('button',{class:'play',onclick:()=>playRange(r)},'▶');
+  play.addEventListener('keydown',e=>{if(e.altKey&&e.key==='ArrowDown'){e.preventDefault();nextCheck(r.id)}});
+  return el('div',{class:'line missed','data-id':r.id},el('div',{class:'meta'},el('div',{},play),el('div',{class:'who',style:'color:'+col(r.spk)},sp?sp.name:'?'),el('div',{class:'t'},fmt(r.start)+' – '+fmt(r.end))),
+    el('div',{},el('b',{},'Missed speech'),` · ${(r.end-r.start).toFixed(1)} s of voice with no line`))}
 function counts(){const n=S.lines.length,d=S.lines.filter(l=>l.ok).length;$('#counts').textContent=n?`${n} lines · ${d} reviewed`:''}
 function autosize(t){t.style.height='auto';t.style.height=Math.max(40,t.scrollHeight+2)+'px'}
 function renderLines(){
   const list=$('#list');list.textContent='';$('#emptyLines').classList.toggle('hide',S.lines.length>0);counts();
-  for(const l of visible()){
+  for(const l of shown()){
+    if(l.row){list.append(missedRow(l));continue}
     const sp=spk(l.spk), ta=el('textarea',{lang:'th',spellcheck:'false'});ta.value=l.text;
     let mir=null,at=0;if(l.unsure_words?.length){mir=el('div',{class:'mirror','aria-hidden':'true'});
       for(const[a,b]of l.unsure_words){mir.append(l.text.slice(at,a),el('u',{},l.text.slice(a,b)));at=b}mir.append(l.text.slice(at))}
@@ -210,12 +222,12 @@ function renderLines(){
     ck.onchange=()=>{l.ok=ck.checked;row.classList.toggle('done',l.ok);queue(l.id,{ok:l.ok});counts()};
     ta.addEventListener('keydown',e=>{if(e.altKey&&e.key==='Enter'){e.preventDefault();l.ok=true;ck.checked=true;row.classList.add('done');queue(l.id,{ok:true});counts();
       const v=visible(),i=v.findIndex(x=>x.id===l.id),nx=v[i+1];if(nx){document.querySelector(`[data-id="${nx.id}"] textarea`)?.focus();playLine(nx.id)}}
-      else if(e.altKey&&e.key==='ArrowDown'){e.preventDefault();const v=visible(),nx=v.slice(v.findIndex(x=>x.id===l.id)+1).find(x=>x.unsure&&!x.ok);if(nx){document.querySelector(`[data-id="${nx.id}"] textarea`)?.focus();document.querySelector(`[data-id="${nx.id}"]`)?.scrollIntoView({block:'center',behavior:'smooth'});playLine(nx.id)}}});
+      else if(e.altKey&&e.key==='ArrowDown'){e.preventDefault();nextCheck(l.id)}});
     list.append(row);
   }
   const tas=[...list.querySelectorAll('textarea')];   // batch: one layout, not one per line
   tas.forEach(t=>t.style.height='auto');const hs=tas.map(t=>t.scrollHeight);tas.forEach((t,i)=>t.style.height=Math.max(40,hs[i]+2)+'px');
-  if(cur)mark(cur);
+  if(cur)mark(cur.id);
 }
 $('#filter').onchange=refresh;
 window.addEventListener('beforeunload',e=>{if(pend.size>0){e.preventDefault();e.returnValue=''}});
@@ -226,17 +238,18 @@ $('#replaceAll').onclick=async()=>{
 
 const player=$('#player');
 function mark(id){document.querySelectorAll('.line.playing').forEach(e=>e.classList.remove('playing'));document.querySelector(`[data-id="${id}"]`)?.classList.add('playing')}
-function playLine(id){
-  const l=S.lines.find(x=>x.id===id);if(!l)return;cur=id;mark(id);
-  const url='/audio/'+l.spk, go=()=>{player.currentTime=Math.max(0,l.start-PAD_B);player.playbackRate=+$('#rate').value;player.play().catch(e=>alert('The browser could not play this audio: '+e.message+'\nTry converting the file to WAV or MP3.'));clearInterval(watch);watch=setInterval(check,40)};
+function playLine(id){const l=S.lines.find(x=>x.id===id);if(l)playRange(l)}
+function playRange(r){
+  cur=r;mark(r.id);
+  const url='/audio/'+r.spk, go=()=>{player.currentTime=Math.max(0,r.start-PAD_B);player.playbackRate=+$('#rate').value;player.play().catch(e=>alert('The browser could not play this audio: '+e.message+'\nTry converting the file to WAV or MP3.'));clearInterval(watch);watch=setInterval(check,40)};
   if(!player.src.endsWith(url)){player.src=url;player.addEventListener('loadedmetadata',go,{once:true});player.load()}else go();
 }
 function check(){
-  const l=S.lines.find(x=>x.id===cur);if(!l||player.paused){if(!l)clearInterval(watch);return}
-  if(player.currentTime>=l.end+PAD_A){
-    if($('#loop').checked){player.currentTime=Math.max(0,l.start-PAD_B);return}
-    const v=visible(),i=v.findIndex(x=>x.id===cur);
-    if($('#auto').checked&&v[i+1]){playLine(v[i+1].id);document.querySelector(`[data-id="${v[i+1].id}"]`)?.scrollIntoView({block:'center',behavior:'smooth'})}
+  const r=cur;if(!r||player.paused){if(!r)clearInterval(watch);return}
+  if(player.currentTime>=r.end+PAD_A){
+    if($('#loop').checked){player.currentTime=Math.max(0,r.start-PAD_B);return}
+    const v=visible(),i=v.findIndex(x=>x.id===r.id);
+    if($('#auto').checked&&!r.row&&v[i+1]){playLine(v[i+1].id);document.querySelector(`[data-id="${v[i+1].id}"]`)?.scrollIntoView({block:'center',behavior:'smooth'})}
     else halt();
   }
 }

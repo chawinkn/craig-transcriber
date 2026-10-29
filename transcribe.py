@@ -265,6 +265,13 @@ class WhisperEngine:
                                                   "prob": float(w.probability)} for w in (getattr(s, "words", None) or [])]}
                                       for s in segments)
 
+    def voice(self, audio_path):
+        """[[start, end], ...] seconds where there is voice, from the same VAD and silence length as decoding."""
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+        stamps = get_speech_timestamps(self.load_audio(audio_path),
+                                       VadOptions(min_silence_duration_ms=DECODE["vad_parameters"]["min_silence_duration_ms"]))
+        return [[round(t["start"] / 16000, 2), round(t["end"] / 16000, 2)] for t in stamps]
+
 
 def _engine_worker(conn, inner, model_name, prefer_cpu):
     """Child process: own the inner engine and answer transcribe requests, streaming segments back."""
@@ -280,6 +287,12 @@ def _engine_worker(conn, inner, model_name, prefer_cpu):
             msg = conn.recv()
         except EOFError:
             return
+        if msg[0] == "voice":
+            try:
+                conn.send(("voice", engine.voice(msg[1])))
+            except Exception as e:
+                conn.send(("error", f"{type(e).__name__}: {e}"))
+            continue
         if msg[0] != "transcribe":
             continue                                # a cancel that arrived after the run had already ended
         try:
@@ -361,6 +374,13 @@ class ProcessEngine:
             raise RuntimeError(rest[0])
         dur, self.language = rest
         return dur, _SegmentStream(self)
+
+    def voice(self, audio_path):
+        self._conn.send(("voice", str(audio_path)))
+        kind, rest = self._recv()
+        if kind == "error":
+            raise RuntimeError(rest[0])
+        return rest[0]
 
 
 class _SegmentStream:
@@ -517,11 +537,11 @@ class Job:
         self._set(message=f"Reading {name}'s audio…")
         dur, segments = engine.transcribe(a[0], run.language, run.prompt)
         try:
-            return self._collect(engine, sid, name, run, dur, segments)
+            return self._collect(engine, sid, name, run, dur, segments, a[0])
         finally:
             getattr(segments, "close", lambda: None)()
 
-    def _collect(self, engine, sid, name, run, dur, segments):
+    def _collect(self, engine, sid, name, run, dur, segments, path):
         self._set(dur=dur, message="")
         detected = "" if run.language else getattr(engine, "language", "")
         if not run.language:
@@ -534,10 +554,21 @@ class Job:
             kept.append(line)
             with self._lock:
                 self._st["recent"] = (self._st["recent"] + [f"{name} [{project.hms(line['start'])}] {line['text']}"])[-4:]
+        speech = self._voice(engine, name, path) if not self._cancelled else None
         if not self._cancelled:
             record = {"model": run.model, "language": run.language or "auto", "vocabulary": run.prompt,
                       "device": engine.device, "at": time.time()}
             if not run.language:
                 record["detected"] = detected
-            self.project.replace_lines(sid, kept, dur, record)
+            self.project.replace_lines(sid, kept, dur, record, speech)
         return dur
+
+    def _voice(self, engine, name, path):
+        """Where there is voice; None when it could not be found, which must not lose a finished transcription."""
+        self._set(message=f"Finding where {name} speaks…")
+        try:
+            return engine.voice(path)
+        except EngineCrashed:
+            raise
+        except Exception as e:
+            self._set(note=f"Could not find where {name} speaks ({str(e)[:160]}), so Missed speech is not shown for them.")

@@ -1,16 +1,19 @@
 import io
 import json
 import os
+import sys
 import tempfile
 import time
+import types
 import unittest
+from unittest import mock
 import wave
 import zipfile
 from pathlib import Path
 
 from project import Project
 import convert_model
-from transcribe import MODEL_FILES, Job, ProcessEngine, WhisperEngine, lines_from_segments, looks_hallucinated, model_catalog
+from transcribe import MODEL_FILES, EngineCrashed, Job, ProcessEngine, WhisperEngine, lines_from_segments, looks_hallucinated, model_catalog
 
 
 def wav(seconds=0.2):
@@ -119,6 +122,26 @@ class ProjectTest(unittest.TestCase):
         self.p.replace_lines(a, [seg(0, "only")], run={"model": "m", "language": "th", "at": 1.0})
         self.p.delete_line(next(l["id"] for l in self.p.state()["lines"] if l["spk"] == a))
         self.assertNotIn("run", Project(self.dir).speaker(a))
+
+    def test_missed_speech_is_voice_no_line_covers_for_two_seconds_or_more(self):
+        a, b = self.two()
+        speech = [[0, 10], [20, 21], [30, 40], [50, 53], [60, 64]]
+        self.p.replace_lines(a, [seg(0, "x"), seg(5, "y"), seg(31, "z"), seg(51.5, "w"), {"start": 58, "end": 61, "text": "v"}],
+                             speech=speech)
+        missed = lambda sid: next(s["missed"] for s in Project(self.dir).state()["speakers"] if s["id"] == sid)
+        self.assertEqual(missed(a), [{"start": 1, "end": 5}, {"start": 6, "end": 10}, {"start": 32, "end": 40},
+                                     {"start": 61, "end": 64}])
+        self.assertEqual(missed(b), [])
+
+    def test_speaker_without_speech_has_no_missed_speech_and_exports_ignore_it(self):
+        a, b = self.two()
+        before = [self.p.export(k) for k in ("txt", "srt", "json")]
+        self.assertEqual([s["missed"] for s in self.p.state()["speakers"]], [[], []])
+        self.p.replace_lines(a, [seg(0, "hello"), seg(5, "world")], speech=[[0, 30]])
+        self.assertEqual(self.p.state()["speakers"][0]["missed"], [{"start": 1, "end": 5}, {"start": 6, "end": 30}])
+        self.assertEqual([self.p.export(k) for k in ("txt", "srt", "json")], before)
+        self.p.replace_lines(a, [seg(0, "again")])
+        self.assertEqual(self.p.speaker(a)["speech"], [[0, 30]])
 
     def test_every_line_carries_its_review_flags(self):
         upload(self.p, "1-a.wav", wav())
@@ -446,6 +469,20 @@ class WhisperEngineTest(unittest.TestCase):
         self.assertEqual(list(segs)[0]["words"], [{"start": 0.0, "end": 0.5, "text": " hi", "prob": 0.9}])
 
 
+    def test_voice_lists_seconds_with_voice(self):
+        vad = types.ModuleType("faster_whisper.vad")
+        vad.VadOptions = lambda **kw: kw
+        vad.get_speech_timestamps = lambda audio, opts: ([{"start": 16000, "end": 40000}] if opts == {"min_silence_duration_ms": 500} else [])
+
+        class Engine(WhisperEngine):
+            load_audio = staticmethod(lambda path: [0.0] * 48000)
+
+            def _load(self, prefer_cpu):
+                pass
+        with mock.patch.dict(sys.modules, {"faster_whisper": types.ModuleType("faster_whisper"), "faster_whisper.vad": vad}):
+            self.assertEqual(Engine("m", True, lambda **kw: None).voice("a.wav"), [[1.0, 2.5]])
+
+
 class ChildEngine:
     """Runs inside the child process of ProcessEngine; some model names crash it the way a CUDA abort does."""
     available = staticmethod(lambda: True)
@@ -473,6 +510,13 @@ class ChildEngine:
                 yield {**seg(i, f"{self.device} {os.getpid()} line {i}"), "words": []}
         return 4.0, gen()
 
+    def voice(self, path):
+        if self.model_name == "crash-in-voice":
+            os._exit(134)
+        if self.model_name == "bad-voice":
+            raise ValueError("no vad")
+        return [[0.0, 1.5]]
+
 
 class IsolatedEngine(ProcessEngine):
     INNER = ChildEngine
@@ -487,6 +531,15 @@ class ProcessEngineTest(unittest.TestCase):
         self.assertEqual((dur, engine.device, engine.language, len(texts)), (4.0, "cuda", "th", 2))
         self.assertNotEqual(texts[0].split()[1], str(os.getpid()))
         self.assertIn({"message": "loaded on cuda"}, notes)
+
+    def test_voice_goes_over_the_pipe_and_errors_and_crashes_come_back(self):
+        engine = IsolatedEngine("ok", True, lambda **kw: None)
+        self.assertEqual(engine.voice("a.wav"), [[0.0, 1.5]])
+        self.assertEqual(next(engine.transcribe("a.wav", "th", "")[1])["text"].split()[2:], ["line", "0"])
+        with self.assertRaisesRegex(RuntimeError, "no vad"):
+            IsolatedEngine("bad-voice", True, lambda **kw: None).voice("a.wav")
+        with self.assertRaises(EngineCrashed):
+            IsolatedEngine("crash-in-voice", True, lambda **kw: None).voice("a.wav")
 
     def test_crash_while_loading_on_the_gpu_retries_on_the_processor(self):
         notes = []
@@ -512,6 +565,7 @@ class ProcessEngineTest(unittest.TestCase):
 
 class FakeEngine:
     segments = [seg(0, " hello "), seg(1, ""), seg(2, "noise", conf=-1.5, no_speech=0.9), seg(3, "world")]
+    speech = [[0.0, 3.5]]
     job = None
 
     def __init__(self, model_name, prefer_cpu, on_status):
@@ -523,6 +577,9 @@ class FakeEngine:
 
     def transcribe(self, path, language, prompt):
         return 4.0, iter(self.segments)
+
+    def voice(self, path):
+        return self.speech
 
 
 class JobTest(unittest.TestCase):
@@ -549,6 +606,49 @@ class JobTest(unittest.TestCase):
         self.assertNotIn("t0", st)
         self.assertEqual([t for _, t in texts(self.p)], ["hello", "world"])
         self.assertEqual(self.p.speaker(self.sid)["duration"], 4.0)
+
+    def test_success_stores_the_voice_stretches(self):
+        self.run_job(FakeEngine)
+        self.assertEqual(Project(self.p.dir).speaker(self.sid)["speech"], [[0.0, 3.5]])
+        self.assertEqual(self.p.state()["speakers"][0]["missed"], [{"start": 1.0, "end": 3.0}])
+
+    def test_failed_or_cancelled_run_keeps_previous_voice(self):
+        self.run_job(FakeEngine)
+
+        class Boom(FakeEngine):
+            speech = [[9.0, 10.0]]
+
+            def transcribe(self, path, language, prompt):
+                raise RuntimeError("boom")
+
+        class Cancelling(Boom):
+            def transcribe(self, path, language, prompt):
+                FakeEngine.job.cancel()
+                return FakeEngine.transcribe(self, path, language, prompt)
+        for engine_cls in (Boom, Cancelling):
+            self.run_job(engine_cls)
+            self.assertEqual(self.p.speaker(self.sid)["speech"], [[0.0, 3.5]])
+            self.assertEqual([t for _, t in texts(self.p)], ["hello", "world"])
+
+    def test_voice_failure_still_saves_the_lines(self):
+        class NoVad(FakeEngine):
+            def voice(self, path):
+                raise RuntimeError("vad broke")
+        st = self.run_job(NoVad).status()
+        self.assertEqual(st["phase"], "done")
+        self.assertIn("vad broke", st["note"])
+        self.assertEqual([t for _, t in texts(self.p)], ["hello", "world"])
+        self.assertNotIn("speech", self.p.speaker(self.sid))
+
+    def test_voice_goes_through_the_child_process(self):
+        self.run_job(IsolatedEngine, device="cpu")
+        self.assertEqual(self.p.speaker(self.sid)["speech"], [[0.0, 1.5]])
+
+    def test_crash_while_finding_voice_ends_the_run_and_keeps_old_lines(self):
+        st = self.run_job(IsolatedEngine, model="crash-in-voice", device="cpu").status()
+        self.assertEqual(st["phase"], "error")
+        self.assertIn("stopped unexpectedly", st["error"])
+        self.assertEqual([t for _, t in texts(self.p)], ["old"])
 
     def test_words_reach_the_state(self):
         class Worded(FakeEngine):

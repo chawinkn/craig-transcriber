@@ -121,6 +121,7 @@ The app walks you through four steps:
    - Press ▶ to hear a line, type to correct it, and tick **reviewed** (or press `Alt+Enter` to tick it and move on).
    - Start with the lines tagged **unsure**, using the "worth a second look" filter, and press `Alt+↓` to jump to the next one. The "Thai/English" filter lists the lines tagged **TH/EN**.
      A line is **unsure** when it has a word the model was not confident about (underlined in the text), or when its text looks made up (a phrase repeated over and over, letters that are neither Thai nor Latin, or faster speech than anyone manages), or when a long Line has far too little text for its length (speech the model missed). The tag shows why next to it (the unsure words, repeated phrase, foreign letters, timing or missed speech). Editing the text clears the tag and the underlines, whatever the cause. Lines from older runs have no word confidence, so only the made-up checks apply to them; transcribe the person again to get underlines. **TH/EN** marks Thai with English words in it.
+   - A dashed **Missed speech** row marks 2 seconds or more of voice (found on each run) that no line covers. Press ▶ to hear it; `Alt+↓` stops there too. Exports contain only lines.
 4. **Save your work.** Download the transcript as `.txt`, `.srt` or `.json`.
 
 ## Choosing a model

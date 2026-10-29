@@ -93,6 +93,26 @@ def review_flags(line):
             "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2}
 
 
+MISSED_MIN_GAP = 2.0   # seconds of voice with no Line over it that count as Missed speech
+
+
+def missed_stretches(speech, spans):
+    """Parts of the voice stretches [start, end] that no span covers, kept when MISSED_MIN_GAP or longer."""
+    out, spans = [], sorted(spans)
+    gap = lambda a, b: out.append({"start": round(a, 2), "end": round(b, 2)}) if round(b - a, 2) >= MISSED_MIN_GAP else None
+    for start, end in speech:
+        pos = start
+        for s, e in spans:
+            if e <= pos:
+                continue
+            if s >= end:
+                break
+            gap(pos, s)
+            pos = max(pos, e)
+        gap(pos, end)
+    return out
+
+
 def speaker_name_from(filename):
     stem = Path(filename).stem
     return re.sub(r"^\d+[-_ ]+", "", stem) or stem          # Craig names files "1-name.flac"
@@ -149,7 +169,7 @@ class Project:
 
     def state(self):
         """Each Line carries its review flags; a Speaker is "touched" when a Line of theirs was reviewed,
-        edited or deleted since the model wrote it."""
+        edited or deleted since the model wrote it, and has its Missed speech stretches."""
         with self._lock:
             st = copy.deepcopy({"speakers": self._p["speakers"], "lines": self._sorted_lines()})
         for l in st["lines"]:
@@ -157,6 +177,7 @@ class Project:
         touched = {l["spk"] for l in st["lines"] if l["ok"] or l["edited"]}
         for sp in st["speakers"]:
             sp["touched"] = sp["id"] in touched or bool(sp.pop("deleted_by_hand", False))
+            sp["missed"] = missed_stretches(sp.get("speech") or [], [(l["start"], l["end"]) for l in st["lines"] if l["spk"] == sp["id"]])
         return st
 
     def speaker(self, sid):
@@ -301,7 +322,7 @@ class Project:
             self._save()
         (self.dir / "audio" / sp["file"]).unlink(missing_ok=True)
 
-    def replace_lines(self, sid, segments, duration=None, run=None):
+    def replace_lines(self, sid, segments, duration=None, run=None, speech=None):
         with self._lock:
             sp = self._speaker(sid)
             if not sp:
@@ -310,6 +331,8 @@ class Project:
                 sp["duration"] = duration
             if run is not None:
                 sp["run"] = run
+            if speech is not None:
+                sp["speech"] = speech
             sp.pop("deleted_by_hand", None)
             self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid]
             for s in segments:
