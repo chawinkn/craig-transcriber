@@ -72,7 +72,7 @@ textarea:focus{outline:2px solid var(--accent);border-color:transparent}
  <label>Speed <select id="rate"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option></select></label>
  <label><input type="checkbox" id="loop"> repeat line</label>
  <label><input type="checkbox" id="auto"> play next line automatically</label>
- <label>Show <select id="filter"><option value="all">all lines</option><option value="todo">not reviewed yet</option><option value="check">worth a second look</option></select></label>
+ <label>Show <select id="filter"><option value="all">all lines</option><option value="todo">not reviewed yet</option><option value="check">worth a second look</option><option value="mixed">Thai/English</option></select></label>
  <span class="small muted" id="counts"></span><span class="small muted" id="saveState"></span>
 </div>
 <details><summary>Find and replace</summary><div class="row" style="margin:8px 0"><input type="text" id="find" placeholder="Find"><input type="text" id="repl" placeholder="Replace with"><label class="small"><input type="checkbox" id="matchCase"> match case</label><button id="replaceAll">Replace all</button><span class="small muted" id="replMsg"></span></div></details>
@@ -176,7 +176,7 @@ async function tick(){
       el('p',{class:'small'},'Nothing you did is lost. Try the Balanced quality, or choose "Processor only", then start again.'),
       el('details',{},el('summary',{},'Technical details'),el('pre',{},j.error+'\n'+(j.trace||'')+'\nengine python '+S.env.py+' cuda='+S.env.cuda))))}
     else if(j.phase==='cancelled')end.append(el('div',{class:'box warn'},'Stopped. People who finished were saved; the person in progress kept their previous lines.'));
-    else if(j.phase==='done')end.append(el('div',{class:'box ok'},el('b',{},'Done. '),`Finished in ${fmt(j.seconds)}. Next, check the lines in step 3. Start with the ones tagged TH/EN, since mixed Thai and English is where the model slips most. `,el('button',{class:'primary',onclick:()=>$('#s3').scrollIntoView()},'Go to step 3 ›')));
+    else if(j.phase==='done')end.append(el('div',{class:'box ok'},el('b',{},'Done. '),`Finished in ${fmt(j.seconds)}. Next, check the lines in step 3. Start with "worth a second look", then try the "Thai/English" filter, since mixed Thai and English is where the model slips most. `,el('button',{class:'primary',onclick:()=>$('#s3').scrollIntoView()},'Go to step 3 ›')));
     picks.clear();await refresh();
   }
 }
@@ -184,7 +184,7 @@ async function tick(){
 const pend=new Map();let saveT=null;
 function queue(id,patch){pend.set(id,Object.assign(pend.get(id)||{id},patch));$('#saveState').textContent='Saving…';clearTimeout(saveT);saveT=setTimeout(flush,600)}
 async function flush(){const u=[...pend.values()];pend.clear();if(!u.length)return;try{await api('/api/lines',{updates:u});$('#saveState').textContent='Saved ✓'}catch(e){$('#saveState').textContent='⚠ Not saved: '+e.message}}
-function visible(){const f=$('#filter').value;return S.lines.filter(l=>f==='all'||(f==='todo'&&!l.ok)||(f==='check'&&!l.ok&&(l.mixed||l.unsure)))}
+function visible(){const f=$('#filter').value;return S.lines.filter(l=>f==='all'||(f==='todo'&&!l.ok)||(f==='check'&&!l.ok&&l.unsure)||(f==='mixed'&&l.mixed))}
 function counts(){const n=S.lines.length,d=S.lines.filter(l=>l.ok).length;$('#counts').textContent=n?`${n} lines · ${d} reviewed`:''}
 function autosize(t){t.style.height='auto';t.style.height=Math.max(40,t.scrollHeight+2)+'px'}
 function renderLines(){
@@ -203,7 +203,8 @@ function renderLines(){
     ta.addEventListener('input',()=>{l.text=ta.value;autosize(ta);queue(l.id,{text:ta.value})});
     ck.onchange=()=>{l.ok=ck.checked;row.classList.toggle('done',l.ok);queue(l.id,{ok:l.ok});counts()};
     ta.addEventListener('keydown',e=>{if(e.altKey&&e.key==='Enter'){e.preventDefault();l.ok=true;ck.checked=true;row.classList.add('done');queue(l.id,{ok:true});counts();
-      const v=visible(),i=v.findIndex(x=>x.id===l.id),nx=v[i+1];if(nx){document.querySelector(`[data-id="${nx.id}"] textarea`)?.focus();playLine(nx.id)}}});
+      const v=visible(),i=v.findIndex(x=>x.id===l.id),nx=v[i+1];if(nx){document.querySelector(`[data-id="${nx.id}"] textarea`)?.focus();playLine(nx.id)}}
+      else if(e.altKey&&e.key==='ArrowDown'){e.preventDefault();const v=visible(),nx=v.slice(v.findIndex(x=>x.id===l.id)+1).find(x=>x.unsure&&!x.ok);if(nx){document.querySelector(`[data-id="${nx.id}"] textarea`)?.focus();document.querySelector(`[data-id="${nx.id}"]`)?.scrollIntoView({block:'center',behavior:'smooth'});playLine(nx.id)}}});
     list.append(row);
   }
   const tas=[...list.querySelectorAll('textarea')];   // batch: one layout, not one per line
