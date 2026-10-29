@@ -20,11 +20,21 @@
 > [!NOTE]
 > Nothing leaves your machine. Audio, transcripts and models all stay local. This project is not affiliated with Craig or OpenAI.
 
+### Language support
+
+The project currently aims at **Thai and English first**, including Thai speech with English words mixed in. The models, defaults and review rules are tuned and tested for these two:
+
+- The optional Thai models only transcribe Thai.
+- How Lines are split and joined is tuned for Thai, which writes no spaces between words.
+- The check for made-up text tags any letters that are neither Thai nor Latin as **unsure**.
+
+Other languages Whisper knows can still be transcribed with **Detect automatically**, but they are untested. Languages in other scripts (Japanese, Chinese, Arabic, ...) will have every Line tagged unsure.
+
 ## Features
 
 - **Drop in Craig's `.zip`**, or individual audio files (FLAC, WAV, MP3, OGG, Opus, M4A, ...). One track per person.
 - **Local transcription**: Whisper models from `small` to `large-v3`. It runs on an NVIDIA GPU (CUDA 12), falls back automatically to the CPU, and is resilient to GPU errors mid-run.
-- **Thai, English or auto-detect**. Thai mode handles mixed Thai/English speech best.
+- **Thai and English first**, or auto-detect for other languages (untested, see [Language support](#language-support)). Thai mode handles mixed Thai/English speech best.
 - **Spelling hints**: a word list steers how names and technical terms are written.
 - **Fast review**:
   - Play any line, change the speed, loop it, or auto-play the next one.
