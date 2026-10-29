@@ -238,6 +238,12 @@ class LinesFromSegmentsTest(unittest.TestCase):
     def test_tiny_lines_far_apart_stay_separate(self):
         self.assertEqual(lines(seg(0, "ใช่"), seg(5, "ครับ")), [("ใช่", 0, 1), ("ครับ", 5, 6)])
 
+    def test_joined_run_stays_within_twelve_seconds(self):
+        out = lines(*[{**seg(i * 0.5, "ก"), "end": i * 0.5 + 0.5} for i in range(30)])
+        self.assertGreater(len(out), 1)
+        self.assertTrue(all(end - start <= 12 for _, start, end in out))
+        self.assertEqual("".join(t for t, _, _ in out), "ก" * 30)
+
     def test_joined_english_pieces_keep_a_space(self):
         piece = lambda t, a: {**seg(a, t), "end": a + 0.1}
         self.assertEqual(lines(piece("go", 0.0), piece("to", 0.1), {**seg(0.2, "bed"), "end": 1.0}), [("go to bed", 0.0, 1.0)])
