@@ -20,6 +20,10 @@ _Avoid_: Suspect (the stored flag behind the made-up causes)
 A word in a Line that the model was not confident about, underlined so the user checks it first.
 _Avoid_: Weak word, low-probability word
 
+**Missed speech**:
+A stretch of a Speaker's audio where someone spoke but no Line holds the words: either no Line covers it, or a Line covers it with far too little text for its length.
+_Avoid_: Gap (that also means real silence between Lines), dropped Line
+
 **Thai model**:
 A Whisper model fine-tuned to transcribe Thai only, offered as an optional alternative to the general Whisper models.
 _Avoid_: Fine-tuned model, custom model
