@@ -366,6 +366,13 @@ class Project:
                                                    for x in s.get("words") or []]})
             self._save()
 
+    def set_speech(self, sid, speech):
+        with self._lock:
+            sp = self._speaker(sid)
+            if sp:
+                sp["speech"] = speech
+                self._save()
+
     def reset(self):
         """Forget everything. Only removes our own files (project.json, audio/), not the whole folder."""
         with self._lock:

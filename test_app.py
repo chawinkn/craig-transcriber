@@ -161,6 +161,20 @@ class ProjectTest(unittest.TestCase):
         self.assertIsNone(self.p.add_line_at("nope", 1, 5))
         self.assertIsNone(self.p.add_line_at(b, 5, 5))
 
+    def test_set_speech_saves_only_the_voice_record(self):
+        a, b = self.two()
+        self.p.dismiss_missed(a, 1, 5)
+        before = self.p.state()
+        self.p.set_speech(a, [[0, 30]])
+        self.p.set_speech("nope", [[0, 1]])
+        after = Project(self.dir).state()
+        self.assertEqual(after["lines"], before["lines"])
+        strip = lambda st: [{k: v for k, v in s.items() if k not in ("speech", "missed")} for s in st["speakers"]]
+        self.assertEqual(strip(after), strip(before))
+        self.assertEqual(after["speakers"][0]["speech"], [[0, 30]])
+        self.assertEqual(after["speakers"][0]["missed"], [{"start": 6, "end": 30}])
+        self.assertNotIn("speech", after["speakers"][1])
+
     def test_speaker_without_speech_has_no_missed_speech_and_exports_ignore_it(self):
         a, b = self.two()
         before = [self.p.export(k) for k in ("txt", "srt", "json")]
@@ -676,6 +690,87 @@ class JobTest(unittest.TestCase):
         st = self.run_job(IsolatedEngine, model="crash-in-voice", device="cpu").status()
         self.assertEqual(st["phase"], "error")
         self.assertIn("stopped unexpectedly", st["error"])
+        self.assertEqual([t for _, t in texts(self.p)], ["old"])
+
+    def check_job(self, engine_cls, ids=None, **opts):
+        job = Job(self.p, engine_cls)
+        FakeEngine.job = job
+        self.assertEqual(job.start({"speakers": ids or [self.sid], "check": True, **opts}), {"ok": True})
+        job._thread.join(10)
+        return job
+
+    def test_check_saves_the_voice_and_leaves_lines_ticks_and_edits_alone(self):
+        self.p.replace_lines(self.sid, [seg(0, "old"), seg(5, "later")], run={"model": "m", "at": 1.0})
+        first = self.p.state()["lines"][0]["id"]
+        self.p.edit_lines([{"id": first, "text": "fixed", "ok": True}])
+        before = self.p.state()
+
+        class NoTranscribing(FakeEngine):
+            def transcribe(self, path, language, prompt):
+                raise AssertionError("a check must not transcribe")
+        st = self.check_job(NoTranscribing).status()
+        after = Project(self.p.dir).state()
+        self.assertEqual((st["phase"], st["check"]), ("done", True))
+        self.assertEqual(after["lines"], before["lines"])
+        strip = lambda state: [{k: v for k, v in s.items() if k not in ("speech", "missed")} for s in state["speakers"]]
+        self.assertEqual(strip(after), strip(before))
+        self.assertEqual(after["speakers"][0]["speech"], [[0.0, 3.5]])
+        self.assertEqual(after["speakers"][0]["missed"], [{"start": 1.0, "end": 3.5}])
+
+    def test_check_failure_changes_nothing_for_that_person_and_is_reported(self):
+        upload(self.p, "2-b.wav", wav())
+        ids = [s["id"] for s in self.p.state()["speakers"]]
+        before = self.p.state()
+
+        class OneNoVad(FakeEngine):
+            def voice(self, path):
+                if path.stem == ids[0]:
+                    raise RuntimeError("vad broke")
+                return super().voice(path)
+        st = self.check_job(OneNoVad, ids).status()
+        self.assertEqual(st["phase"], "done")
+        self.assertIn("vad broke", st["note"])
+        speakers = self.p.state()["speakers"]
+        self.assertNotIn("speech", speakers[0])
+        self.assertEqual(speakers[1]["speech"], [[0.0, 3.5]])
+        self.assertEqual(self.p.state()["lines"], before["lines"])
+
+    def test_check_cancel_stops_between_people(self):
+        upload(self.p, "2-b.wav", wav())
+        ids = [s["id"] for s in self.p.state()["speakers"]]
+
+        class Cancelling(FakeEngine):
+            def voice(self, path):
+                FakeEngine.job.cancel()
+                return super().voice(path)
+        st = self.check_job(Cancelling, ids).status()
+        self.assertEqual(st["phase"], "cancelled")
+        speakers = self.p.state()["speakers"]
+        self.assertEqual(["speech" in s for s in speakers], [True, False])
+
+    def test_check_reuses_a_loaded_engine_whatever_model_is_chosen(self):
+        loaded = []
+
+        class Counting(FakeEngine):
+            def __init__(self, model_name, *a):
+                loaded.append(model_name)
+                super().__init__(model_name, *a)
+        job = Job(self.p, Counting)
+        for opts in ({"model": "m"}, {"model": "other", "check": True}, {"model": "m"}):
+            self.assertEqual(job.start({"speakers": [self.sid], **opts}), {"ok": True})
+            job._thread.join(10)
+        self.assertEqual(loaded, ["m"])
+
+    def test_check_crash_ends_the_run_and_the_next_one_gets_a_fresh_engine(self):
+        job = Job(self.p, IsolatedEngine)
+        for model, want in (("crash-in-voice", "error"), ("m", "done")):
+            self.assertEqual(job.start({"speakers": [self.sid], "check": True, "model": model, "device": "cpu"}), {"ok": True})
+            job._thread.join(10)
+            self.assertEqual(job.status()["phase"], want, job.status().get("error"))
+            if want == "error":
+                self.assertIn("stopped unexpectedly", job.status()["error"])
+                self.assertNotIn("speech", self.p.speaker(self.sid))
+        self.assertEqual(self.p.speaker(self.sid)["speech"], [[0.0, 1.5]])
         self.assertEqual([t for _, t in texts(self.p)], ["old"])
 
     def test_words_reach_the_state(self):

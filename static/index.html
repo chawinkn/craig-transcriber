@@ -71,6 +71,7 @@ textarea:focus{outline:2px solid var(--accent);border-color:transparent}
 
 <section id="s3"><h2><span class="num">3</span>Check and fix</h2>
 <p class="sub">Press ▶ on a line to hear it. Type in the box to fix the words. Tick <b>reviewed</b> when a line is right, or press <b>Alt+Enter</b> to tick it and play the next line. <b>Alt+↓</b> jumps to the next unsure line or <b>Missed speech</b>: a dashed row where someone spoke but no line holds the words. Edits save automatically.</p>
+<div class="row small hide" id="chkBox" style="margin:8px 0"><button id="chk">Check for missed speech</button><span class="muted" id="chkMsg"></span></div>
 <div class="bar2" id="tools">
  <button id="halt">■ Stop audio</button>
  <label>Speed <select id="rate"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option></select></label>
@@ -92,7 +93,7 @@ textarea:focus{outline:2px solid var(--accent);border-color:transparent}
 (()=>{
 const $=s=>document.querySelector(s), COLORS=['#2563eb','#c026d3','#059669','#d97706','#dc2626','#0891b2','#7c3aed','#65a30d'];
 const PAD_B=0.4, PAD_A=0.3;
-let S={speakers:[],lines:[],env:{}}, polling=null, cur=null, watch=null; const picks=new Map();
+let S={speakers:[],lines:[],env:{}}, polling=null, cur=null, watch=null, checking=false, chkNote=''; const picks=new Map();
 const spk=id=>S.speakers.find(s=>s.id===id), col=id=>COLORS[Math.max(0,S.speakers.findIndex(s=>s.id===id))%COLORS.length];
 const fmt=t=>{if(!isFinite(t))return '—';t=Math.max(0,Math.floor(t));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;return (h?h+':'+String(m).padStart(2,'0'):String(m).padStart(2,'0'))+':'+String(s).padStart(2,'0')};
 async function api(path,body){const r=await fetch(path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const j=await r.json().catch(()=>({error:'Bad reply'}));if(!r.ok||j.error)throw new Error(j.error||r.statusText);return j}
@@ -148,6 +149,19 @@ function renderPeople(){
   }
 }
 
+const runOpts=()=>({model:$('#custom').value.trim()||$('#model').value,language:$('#lang').value,device:$('#device').value,prompt:$('#prompt').value});
+const unchecked=()=>S.speakers.filter(s=>!s.speech&&S.lines.some(l=>l.spk===s.id));
+function renderCheck(){
+  const todo=unchecked();$('#chkBox').classList.toggle('hide',!todo.length&&!checking&&!chkNote);
+  if(!checking){$('#chk').textContent='Check for missed speech';$('#chk').disabled=false;
+    $('#chkMsg').textContent=chkNote||(todo.length?`Not checked yet for ${todo.map(s=>s.name).join(', ')}. Takes seconds and changes no line.`:'')}
+}
+$('#chk').onclick=async()=>{
+  if(checking){api('/api/cancel',{});$('#chk').disabled=true;return}
+  chkNote='';$('#jobEnd').textContent='';
+  try{await api('/api/transcribe',{...runOpts(),speakers:unchecked().map(s=>s.id),check:true});poll()}
+  catch(e){chkNote=e.message;renderCheck()}
+};
 $('#go').onclick=async()=>{
   const ids=[...document.querySelectorAll('[data-pick]')].filter(c=>c.checked).map(c=>c.dataset.pick);
   if(!ids.length){$('#goHint').textContent=S.speakers.length?'Tick at least one person first.':'Add a recording first (step 1).';return}
@@ -155,31 +169,33 @@ $('#go').onclick=async()=>{
   const redo=S.speakers.filter(s=>ids.includes(s.id)&&s.touched).map(s=>s.name);
   if(redo.length&&!confirm(`Transcribing ${redo.join(', ')} again replaces their lines, including your fixes and reviewed ticks. Continue?`))return;
   $('#goHint').textContent='';$('#jobEnd').textContent='';
-  try{await api('/api/transcribe',{speakers:ids,model:$('#custom').value.trim()||$('#model').value,language:$('#lang').value,device:$('#device').value,prompt:$('#prompt').value});poll()}
+  try{await api('/api/transcribe',{...runOpts(),speakers:ids});poll()}
   catch(e){$('#jobEnd').append(el('div',{class:'box bad'},e.message))}
 };
 $('#stop').onclick=()=>{api('/api/cancel',{});$('#stop').disabled=true;$('#stop').textContent='Stopping…'};
 function poll(){clearInterval(polling);tick();polling=setInterval(tick,1000)}
 async function tick(){
   const j=await api('/api/status').catch(()=>null);if(!j||!j.phase)return;
-  const running=!!j.running;
+  const running=!!j.running;checking=running&&!!j.check;renderCheck();if(running&&!j.check)$('#chk').disabled=true;
   $('#job').classList.toggle('hide',false);$('#go').classList.toggle('hide',running);$('#stop').classList.toggle('hide',!running);
   $('#stop').disabled=!running;if(running&&$('#stop').textContent==='Stopping…'&&!j.cancel)$('#stop').textContent='Stop';
   if(running){
     $('#jobWho').textContent=j.phase==='loading'?'Getting the model ready…':`Person ${j.index+1} of ${j.count}: ${j.who}`;
-    const frac=j.dur>0?Math.min(1,(j.index+j.pos/j.dur)/j.count):0;$('#jobBar').style.width=(j.phase==='loading'?3:frac*100)+'%';
+    const frac=j.check?j.index/j.count:j.dur>0?Math.min(1,(j.index+j.pos/j.dur)/j.count):0;$('#jobBar').style.width=(j.phase==='loading'?3:frac*100)+'%';
     let t=j.message||'';
-    if(j.phase==='working'){t=`Heard ${fmt(j.pos)}`+(j.dur?` of ${fmt(j.dur)}`:'')+` · ${fmt(j.elapsed)} elapsed · using the ${j.device==='cuda'?'graphics card':'processor'}`;
+    if(j.check){$('#chk').textContent='Stop';$('#chkMsg').textContent=`Person ${j.index+1} of ${j.count}: ${j.message}`}
+    else if(j.phase==='working'){t=`Heard ${fmt(j.pos)}`+(j.dur?` of ${fmt(j.dur)}`:'')+` · ${fmt(j.elapsed)} elapsed · using the ${j.device==='cuda'?'graphics card':'processor'}`;
       if(j.pos>20&&j.dur&&j.elapsed>10){const left=(j.dur-j.pos)*(j.elapsed/Math.max(1,(j.audio_done||0)+j.pos));t+=` · about ${fmt(left)} left for this person`}}
     $('#jobText').textContent=t;$('#jobNote').textContent=j.note||'';
     $('#live').textContent='';for(const r of j.recent||[])$('#live').append(el('div',{},r));
   }else{
-    clearInterval(polling);polling=null;
+    clearInterval(polling);polling=null;chkNote=j.check?(j.error||j.note||''):'';
     $('#job').classList.add('hide');const end=$('#jobEnd');end.textContent='';
     if(j.phase==='error'){end.append(el('div',{class:'box bad'},el('b',{},'Whisper stopped with an error. '),j.error,
       el('p',{class:'small'},'Nothing you did is lost. Try the Balanced quality, or choose "Processor only", then start again.'),
       el('details',{},el('summary',{},'Technical details'),el('pre',{},j.error+'\n'+(j.trace||'')+'\nengine python '+S.env.py+' cuda='+S.env.cuda))))}
     else if(j.phase==='cancelled')end.append(el('div',{class:'box warn'},'Stopped. People who finished were saved; the person in progress kept their previous lines.'));
+    else if(j.phase==='done'&&j.check)end.append(el('div',{class:'box ok'},el('b',{},'Done. '),`Checked in ${fmt(j.seconds)}. Missed speech rows now show in step 3.`));
     else if(j.phase==='done')end.append(el('div',{class:'box ok'},el('b',{},'Done. '),`Finished in ${fmt(j.seconds)}. Next, check the lines in step 3. Start with "worth a second look", then try the "Thai/English" filter, since mixed Thai and English is where the model slips most. `,el('button',{class:'primary',onclick:()=>$('#s3').scrollIntoView()},'Go to step 3 ›')));
     picks.clear();await refresh();
   }
@@ -265,7 +281,7 @@ async function refresh(){
   await flush();S=await api('/api/state');
   for(const sp of S.speakers) if(S.lines.some(l=>l.spk===sp.id)&&!picks.has(sp.id)) picks.set(sp.id,false);   // already has a transcript: do not redo by default
   picks.forEach((v,k)=>{if(!S.speakers.some(s=>s.id===k))picks.delete(k)});
-  renderEnv();renderPeople();renderLines();
+  renderEnv();renderPeople();renderCheck();renderLines();
 }
 refresh().then(()=>api('/api/status').then(j=>{if(j&&j.running)poll()}));
 })();

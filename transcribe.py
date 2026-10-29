@@ -423,6 +423,7 @@ class RunOptions:
     language: "str | None"
     prefer_cpu: bool
     prompt: str
+    check: bool = False     # only find where there is voice, nothing is transcribed
 
 
 class Job:
@@ -481,8 +482,8 @@ class Job:
                 source = str(model_dir(self.project.dir, model))
             self._t0 = time.time()
             run = RunOptions(model, source, opts.get("language") or None, opts.get("device") == "cpu",
-                             (opts.get("prompt") or "").strip())
-            self._st = dict(running=True, cancel=False, phase="loading", message="Starting…", note="", error=None,
+                             (opts.get("prompt") or "").strip(), bool(opts.get("check")))
+            self._st = dict(running=True, check=run.check, cancel=False, phase="loading", message="Starting…", note="", error=None,
                             recent=[], pos=0.0, dur=0.0, audio_done=0.0, index=0, count=len(ids), who="", model=model)
             self._thread = threading.Thread(target=self._run, daemon=True, args=(ids, run))
             self._thread.start()
@@ -493,7 +494,7 @@ class Job:
         try:
             self._set(phase="loading", message="Getting the model ready…")
             key = (run.source, run.prefer_cpu)
-            if self._engine_key != key:
+            if self._engine_key != key and not (run.check and self._engine):    # voice detection needs no particular model
                 self._engine = self._engine_key = None
                 self._engine = self.engine_cls(run.source, run.prefer_cpu, self._on_status)
                 self._engine_key = key
@@ -505,7 +506,14 @@ class Job:
                 if not sp or self._cancelled:
                     break
                 self._set(phase="working", who=sp["name"], index=idx, count=len(ids), pos=0.0, audio_done=done,
-                          dur=sp.get("duration") or 0.0, message="")
+                          dur=0.0 if run.check else sp.get("duration") or 0.0, message="")
+                if run.check:
+                    try:
+                        self._check(engine, sid, sp["name"])
+                    except EngineCrashed:
+                        self._engine = self._engine_key = None
+                        raise
+                    continue
                 for attempt in (0, 1):
                     try:
                         done += self._transcribe(engine, sid, sp["name"], run)
@@ -527,6 +535,14 @@ class Job:
             self._set(phase="error", error=f"{type(e).__name__}: {e}", trace=traceback.format_exc()[-1500:])
         finally:
             self._set(running=False)
+
+    def _check(self, engine, sid, name):
+        a = self.project.audio(sid)
+        if not a:
+            raise RuntimeError(f"the audio file for {name} is missing")
+        speech = self._voice(engine, name, a[0])
+        if speech is not None:
+            self.project.set_speech(sid, speech)
 
     def _transcribe(self, engine, sid, name, run):
         """One person: collect their lines locally, and only a finished run replaces the old ones.
