@@ -151,8 +151,39 @@ def _line(start, end, text, conf):
     return {"start": start, "end": end, "text": text, "conf": conf, "suspect": too_fast or looks_hallucinated(text)}
 
 
+def _join_fragments(lines):
+    """Join a run of tiny Lines (3 characters or fewer, under LINE_GAP apart) and the Line after it, up to LINE_MAX.
+    Some models emit a segment per piece, which reads as one character per Line."""
+    tiny = lambda l: len(re.sub(r"\s+", "", l["text"])) <= 3
+    parts = []
+    for ln in lines:
+        if parts and tiny(parts[0]) and all(tiny(p) for p in parts) and ln["start"] - parts[-1]["end"] < LINE_GAP \
+                and ln["end"] - parts[0]["start"] <= LINE_MAX:
+            parts.append(ln)
+            continue
+        if parts:
+            yield _merged(parts)
+        parts = [ln]
+    if parts:
+        yield _merged(parts)
+
+
+def _merged(parts):
+    if len(parts) == 1:
+        return parts[0]
+    text = parts[0]["text"]
+    for p in parts[1:]:
+        text += (" " if text[-1:].isascii() and text[-1:].isalnum() and p["text"][:1].isascii() and p["text"][:1].isalnum() else "") + p["text"]
+    confs = [p["conf"] for p in parts if p["conf"] is not None]
+    return _line(parts[0]["start"], parts[-1]["end"], text, sum(confs) / len(confs) if confs else None)
+
+
 def lines_from_segments(segments):
     """Yield Lines from engine segments: drop silence and empty text, split long segments at pauses, flag suspects."""
+    return _join_fragments(_split_segments(segments))
+
+
+def _split_segments(segments):
     for seg in segments:
         text, conf = seg["text"].strip(), seg.get("conf")
         if not text or ((seg.get("no_speech") or 0) > 0.8 and conf is not None and conf < -1.0):
