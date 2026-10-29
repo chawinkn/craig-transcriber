@@ -24,7 +24,7 @@ def srt_time(t):
     return f"{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}:{ms % 60000 // 1000:02d},{ms % 1000:03d}"
 
 
-UNSURE_WORD_PROB = 0.5      # provisional, tuned in #29
+UNSURE_WORD_PROB = 0.5  # TODO: provisional; tune on real audio in #29
 
 
 def unsure_spans(text, words):
@@ -41,7 +41,7 @@ def unsure_spans(text, words):
     return spans
 
 
-LINE_MAX_CPS = 30.0       # faster than anyone speaks
+LINE_MAX_CPS = 30.0  # faster than anyone speaks
 
 
 def repeats(text):

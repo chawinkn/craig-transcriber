@@ -69,7 +69,7 @@ textarea:focus{outline:2px solid var(--accent);border-color:transparent}
 <div id="jobEnd"></div></section>
 
 <section id="s3"><h2><span class="num">3</span>Check and fix</h2>
-<p class="sub">Press ▶ on a line to hear it. Type in the box to fix the words. Tick <b>reviewed</b> when a line is right, or press <b>Alt+Enter</b> to tick it and play the next line. Edits save automatically.</p>
+<p class="sub">Press ▶ on a line to hear it. Type in the box to fix the words. Tick <b>reviewed</b> when a line is right, or press <b>Alt+Enter</b> to tick it and play the next line. <b>Alt+↓</b> jumps to the next unsure line. Edits save automatically.</p>
 <div class="bar2" id="tools">
  <button id="halt">■ Stop audio</button>
  <label>Speed <select id="rate"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option></select></label>
@@ -199,7 +199,7 @@ function renderLines(){
     const ck=el('input',{type:'checkbox'});ck.checked=l.ok;
     const row=el('div',{class:'line'+(l.ok?' done':''),'data-id':l.id});
     const tags=el('div',{class:'tags'});if(l.mixed)tags.append(el('span',{class:'tag'},'TH/EN'));let why=null;if(l.unsure){const w=l.unsure_words.map(([a,b])=>l.text.slice(a,b)),n=w.length>3?' +'+(w.length-3):'';
-      why=el('span',{class:'why'},l.reasons.map(r=>r==='unsure word'?'unsure word '+w.slice(0,3).join(', ')+n:r).join(' · '));tags.append(el('span',{class:'tag low'},'unsure'),why)}
+      why=el('span',{class:'why'},l.reasons.map(r=>r==='unsure word'?'unsure word: '+w.slice(0,3).join(', ')+n:r).join(' · '));tags.append(el('span',{class:'tag low'},'unsure'),why)}
     row.append(el('div',{class:'meta'},el('div',{},el('button',{class:'play',onclick:()=>playLine(l.id)},'▶')),
         el('div',{class:'who',style:'color:'+col(l.spk)},sp?sp.name:'?'),el('div',{class:'t'},fmt(l.start)+' – '+fmt(l.end)),tags),
       el('div',{},el('div',{class:'hl'},ta,mir),el('div',{class:'acts'},el('label',{},ck,' reviewed'),

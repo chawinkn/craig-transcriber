@@ -88,7 +88,7 @@ def looks_hallucinated(text):
 DECODE = dict(beam_size=5, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500),
               condition_on_previous_text=False, word_timestamps=True, no_repeat_ngram_size=10)
 
-# Measured on one-minute Thai clips: pauses of 0.6 s keep every Line under 12 s; 30 chars/s is faster than anyone speaks.
+# Measured on one-minute Thai clips: pauses of 0.6 s keep every Line under 12 s.
 LINE_GAP, LINE_MAX = 0.6, 12.0
 
 
