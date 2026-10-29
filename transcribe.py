@@ -80,12 +80,7 @@ def model_catalog(data_dir):
 
 
 def looks_hallucinated(text):
-    """A phrase of 4+ characters repeated 3+ times in a row, or letters that are neither Thai nor Latin."""
-    if re.search(r"(.{4,}?)\1{2,}", re.sub(r"\s+", "", text)):
-        return True
-    # Latin: Basic through Extended-B (U+024F) plus Extended Additional (U+1E00-1EFF, Vietnamese).
-    return any(ch.isalpha() and not ("\u0e00" <= ch <= "\u0e7f" or ch <= "\u024f" or "\u1e00" <= ch <= "\u1eff")
-               for ch in text)
+    return project.repeats(text) or project.foreign_letters(text)
 
 
 # No hallucination_silence_threshold: on noisy Thai audio it dropped ~70% of real speech (#4).
@@ -93,8 +88,8 @@ def looks_hallucinated(text):
 DECODE = dict(beam_size=5, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500),
               condition_on_previous_text=False, word_timestamps=True, no_repeat_ngram_size=10)
 
-# Measured on one-minute Thai clips: pauses of 0.6 s keep every Line under 12 s; 30 chars/s is faster than anyone speaks.
-LINE_GAP, LINE_MAX, LINE_MAX_CPS = 0.6, 12.0, 30.0
+# Measured on one-minute Thai clips: pauses of 0.6 s keep every Line under 12 s.
+LINE_GAP, LINE_MAX = 0.6, 12.0
 
 
 def _starts_word(words, j):
@@ -145,10 +140,9 @@ def _spans(words):
     return [part for span in spans for part in _cap(words, *span)]
 
 
-def _line(start, end, text, conf):
-    chars = len(re.sub(r"\s+", "", text))
-    too_fast = chars >= 8 and chars / max(end - start, 0.01) > LINE_MAX_CPS
-    return {"start": start, "end": end, "text": text, "conf": conf, "suspect": too_fast or looks_hallucinated(text)}
+def _line(start, end, text, conf, words):
+    return {"start": start, "end": end, "text": text, "conf": conf, "suspect": project.too_fast(text, start, end) or looks_hallucinated(text),
+            "words": [{"text": w["text"], "prob": w["prob"]} for w in words]}
 
 
 def _join_fragments(lines):
@@ -178,7 +172,8 @@ def _merged(parts):
     for p in parts[1:]:
         text += (" " if text[-1:].isascii() and text[-1:].isalnum() and p["text"][:1].isascii() and p["text"][:1].isalnum() else "") + p["text"]
     confs = [p["conf"] for p in parts if p["conf"] is not None]
-    return _line(parts[0]["start"], parts[-1]["end"], text, sum(confs) / len(confs) if confs else None)
+    return _line(parts[0]["start"], parts[-1]["end"], text, sum(confs) / len(confs) if confs else None,
+                 [w for p in parts for w in p["words"]])
 
 
 def lines_from_segments(segments):
@@ -194,13 +189,13 @@ def _split_segments(segments):
         words = seg.get("words") or []
         spans = _spans(words) if words else []
         if len(spans) < 2:
-            yield _line(seg["start"], seg["end"], text, conf)
+            yield _line(seg["start"], seg["end"], text, conf, words)
             continue
         for lo, hi, start, end in spans:
             part = "".join(w["text"] for w in words[lo:hi]).strip()
             if part:
                 logs = [math.log(max(w["prob"], 1e-6)) for w in words[lo:hi]]
-                yield _line(start, end, part, sum(logs) / len(logs))
+                yield _line(start, end, part, sum(logs) / len(logs), words[lo:hi])
 
 
 class WhisperEngine:

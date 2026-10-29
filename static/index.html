@@ -33,8 +33,11 @@ details summary{cursor:pointer;color:var(--accent)}
 .line{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:10px 6px;border-top:1px solid var(--line);border-left:4px solid transparent}
 .line.playing{background:rgba(36,87,214,.08);border-left-color:var(--accent)}.line.done{opacity:.72}
 .meta{font-size:14px}.meta .who{font-weight:700}.meta .t{color:var(--muted);font-variant-numeric:tabular-nums}
-.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.tag{font-size:11.5px;border-radius:5px;padding:0 6px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}.tag.low{color:var(--warn);border-color:var(--warn)}
-textarea{width:100%;font:inherit;line-height:1.45;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 9px;resize:vertical;min-height:40px}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.tag{font-size:11.5px;border-radius:5px;padding:0 6px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}.tag.low{color:var(--warn);border-color:var(--warn)}.why{font-size:11.5px;color:var(--muted);flex-basis:100%}
+.hl{position:relative;background:var(--card);border-radius:8px}
+textarea{display:block;width:100%;font:inherit;line-height:1.45;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:8px;padding:6px 9px;resize:vertical;min-height:40px}
+.mirror{position:absolute;inset:0;overflow:hidden;pointer-events:none;border:1px solid transparent;padding:6px 9px;font:inherit;line-height:1.45;white-space:pre-wrap;overflow-wrap:break-word;color:transparent}
+.mirror u{text-decoration:underline wavy var(--warn);text-underline-offset:3px}
 textarea:focus{outline:2px solid var(--accent);border-color:transparent}
 .acts{display:flex;flex-wrap:wrap;gap:12px;align-items:center;font-size:14px;margin-top:4px;color:var(--muted)}
 .acts button{padding:2px 9px;font-size:13px}.play{padding:3px 11px}
@@ -66,13 +69,13 @@ textarea:focus{outline:2px solid var(--accent);border-color:transparent}
 <div id="jobEnd"></div></section>
 
 <section id="s3"><h2><span class="num">3</span>Check and fix</h2>
-<p class="sub">Press ▶ on a line to hear it. Type in the box to fix the words. Tick <b>reviewed</b> when a line is right, or press <b>Alt+Enter</b> to tick it and play the next line. Edits save automatically.</p>
+<p class="sub">Press ▶ on a line to hear it. Type in the box to fix the words. Tick <b>reviewed</b> when a line is right, or press <b>Alt+Enter</b> to tick it and play the next line. <b>Alt+↓</b> jumps to the next unsure line. Edits save automatically.</p>
 <div class="bar2" id="tools">
  <button id="halt">■ Stop audio</button>
  <label>Speed <select id="rate"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option></select></label>
  <label><input type="checkbox" id="loop"> repeat line</label>
  <label><input type="checkbox" id="auto"> play next line automatically</label>
- <label>Show <select id="filter"><option value="all">all lines</option><option value="todo">not reviewed yet</option><option value="check">worth a second look</option></select></label>
+ <label>Show <select id="filter"><option value="all">all lines</option><option value="todo">not reviewed yet</option><option value="check">worth a second look</option><option value="mixed">Thai/English</option></select></label>
  <span class="small muted" id="counts"></span><span class="small muted" id="saveState"></span>
 </div>
 <details><summary>Find and replace</summary><div class="row" style="margin:8px 0"><input type="text" id="find" placeholder="Find"><input type="text" id="repl" placeholder="Replace with"><label class="small"><input type="checkbox" id="matchCase"> match case</label><button id="replaceAll">Replace all</button><span class="small muted" id="replMsg"></span></div></details>
@@ -176,7 +179,7 @@ async function tick(){
       el('p',{class:'small'},'Nothing you did is lost. Try the Balanced quality, or choose "Processor only", then start again.'),
       el('details',{},el('summary',{},'Technical details'),el('pre',{},j.error+'\n'+(j.trace||'')+'\nengine python '+S.env.py+' cuda='+S.env.cuda))))}
     else if(j.phase==='cancelled')end.append(el('div',{class:'box warn'},'Stopped. People who finished were saved; the person in progress kept their previous lines.'));
-    else if(j.phase==='done')end.append(el('div',{class:'box ok'},el('b',{},'Done. '),`Finished in ${fmt(j.seconds)}. Next, check the lines in step 3. Start with the ones tagged TH/EN, since mixed Thai and English is where the model slips most. `,el('button',{class:'primary',onclick:()=>$('#s3').scrollIntoView()},'Go to step 3 ›')));
+    else if(j.phase==='done')end.append(el('div',{class:'box ok'},el('b',{},'Done. '),`Finished in ${fmt(j.seconds)}. Next, check the lines in step 3. Start with "worth a second look", then try the "Thai/English" filter, since mixed Thai and English is where the model slips most. `,el('button',{class:'primary',onclick:()=>$('#s3').scrollIntoView()},'Go to step 3 ›')));
     picks.clear();await refresh();
   }
 }
@@ -184,26 +187,30 @@ async function tick(){
 const pend=new Map();let saveT=null;
 function queue(id,patch){pend.set(id,Object.assign(pend.get(id)||{id},patch));$('#saveState').textContent='Saving…';clearTimeout(saveT);saveT=setTimeout(flush,600)}
 async function flush(){const u=[...pend.values()];pend.clear();if(!u.length)return;try{await api('/api/lines',{updates:u});$('#saveState').textContent='Saved ✓'}catch(e){$('#saveState').textContent='⚠ Not saved: '+e.message}}
-function visible(){const f=$('#filter').value;return S.lines.filter(l=>f==='all'||(f==='todo'&&!l.ok)||(f==='check'&&!l.ok&&(l.mixed||l.unsure)))}
+function visible(){const f=$('#filter').value;return S.lines.filter(l=>f==='all'||(f==='todo'&&!l.ok)||(f==='check'&&!l.ok&&l.unsure)||(f==='mixed'&&l.mixed))}
 function counts(){const n=S.lines.length,d=S.lines.filter(l=>l.ok).length;$('#counts').textContent=n?`${n} lines · ${d} reviewed`:''}
 function autosize(t){t.style.height='auto';t.style.height=Math.max(40,t.scrollHeight+2)+'px'}
 function renderLines(){
   const list=$('#list');list.textContent='';$('#emptyLines').classList.toggle('hide',S.lines.length>0);counts();
   for(const l of visible()){
     const sp=spk(l.spk), ta=el('textarea',{lang:'th',spellcheck:'false'});ta.value=l.text;
+    let mir=null,at=0;if(l.unsure_words?.length){mir=el('div',{class:'mirror','aria-hidden':'true'});
+      for(const[a,b]of l.unsure_words){mir.append(l.text.slice(at,a),el('u',{},l.text.slice(a,b)));at=b}mir.append(l.text.slice(at))}
     const ck=el('input',{type:'checkbox'});ck.checked=l.ok;
     const row=el('div',{class:'line'+(l.ok?' done':''),'data-id':l.id});
-    const tags=el('div',{class:'tags'});if(l.mixed)tags.append(el('span',{class:'tag'},'TH/EN'));if(l.unsure)tags.append(el('span',{class:'tag low'},'unsure'));
+    const tags=el('div',{class:'tags'});if(l.mixed)tags.append(el('span',{class:'tag'},'TH/EN'));let why=null;if(l.unsure){const w=l.unsure_words.map(([a,b])=>l.text.slice(a,b)),n=w.length>3?' +'+(w.length-3):'';
+      why=el('span',{class:'why'},l.reasons.map(r=>r==='unsure word'?'unsure word: '+w.slice(0,3).join(', ')+n:r).join(' · '));tags.append(el('span',{class:'tag low'},'unsure'),why)}
     row.append(el('div',{class:'meta'},el('div',{},el('button',{class:'play',onclick:()=>playLine(l.id)},'▶')),
         el('div',{class:'who',style:'color:'+col(l.spk)},sp?sp.name:'?'),el('div',{class:'t'},fmt(l.start)+' – '+fmt(l.end)),tags),
-      el('div',{},ta,el('div',{class:'acts'},el('label',{},ck,' reviewed'),
+      el('div',{},el('div',{class:'hl'},ta,mir),el('div',{class:'acts'},el('label',{},ck,' reviewed'),
         el('button',{onclick:async()=>{const r=await api('/api/line/add',{after:l.id});S.lines.push(r.line);S.lines.sort((a,b)=>a.start-b.start);renderLines();document.querySelector(`[data-id="${r.line.id}"] textarea`)?.focus()}},'+ line below'),
         el('button',{onclick:async()=>{if(!l.text||confirm('Delete this line?')){await api('/api/line/delete',{id:l.id});S.lines=S.lines.filter(x=>x.id!==l.id);renderLines()}}},'delete'),
         l.edited?el('span',{class:'tag'},'edited'):null)));
-    ta.addEventListener('input',()=>{l.text=ta.value;autosize(ta);queue(l.id,{text:ta.value})});
+    ta.addEventListener('input',()=>{mir?.remove();why?.remove();tags.querySelector('.low')?.remove();l.unsure_words=[];l.reasons=[];l.unsure=false;l.text=ta.value;autosize(ta);queue(l.id,{text:ta.value})});
     ck.onchange=()=>{l.ok=ck.checked;row.classList.toggle('done',l.ok);queue(l.id,{ok:l.ok});counts()};
     ta.addEventListener('keydown',e=>{if(e.altKey&&e.key==='Enter'){e.preventDefault();l.ok=true;ck.checked=true;row.classList.add('done');queue(l.id,{ok:true});counts();
-      const v=visible(),i=v.findIndex(x=>x.id===l.id),nx=v[i+1];if(nx){document.querySelector(`[data-id="${nx.id}"] textarea`)?.focus();playLine(nx.id)}}});
+      const v=visible(),i=v.findIndex(x=>x.id===l.id),nx=v[i+1];if(nx){document.querySelector(`[data-id="${nx.id}"] textarea`)?.focus();playLine(nx.id)}}
+      else if(e.altKey&&e.key==='ArrowDown'){e.preventDefault();const v=visible(),nx=v.slice(v.findIndex(x=>x.id===l.id)+1).find(x=>x.unsure&&!x.ok);if(nx){document.querySelector(`[data-id="${nx.id}"] textarea`)?.focus();document.querySelector(`[data-id="${nx.id}"]`)?.scrollIntoView({block:'center',behavior:'smooth'});playLine(nx.id)}}});
     list.append(row);
   }
   const tas=[...list.querySelectorAll('textarea')];   // batch: one layout, not one per line

@@ -13,8 +13,12 @@ One short stretch of a Speaker's speech, with its start and end time and its tex
 _Avoid_: Segment (that is the model's raw output, which may cover many Lines), sentence, utterance
 
 **Unsure** (of a Line):
-Tagged for a second look: the model's confidence in the Line is low, or its text looks made up (a phrase repeated over and over, letters that are neither Thai nor Latin, or more characters than anyone can say in that time) and the user has not changed it.
-_Avoid_: Low confidence, suspect (the latter is the stored flag behind it)
+Tagged for a second look, with the reason shown: the Line has an Unsure word, or its text looks made up (a phrase repeated over and over, letters that are neither Thai nor Latin, or far more text than its time allows). A Line stops being unsure once the user edits its text.
+_Avoid_: Suspect (the stored flag behind the made-up causes)
+
+**Unsure word**:
+A word in a Line that the model was not confident about, underlined so the user checks it first.
+_Avoid_: Weak word, low-probability word
 
 **Thai model**:
 A Whisper model fine-tuned to transcribe Thai only, offered as an optional alternative to the general Whisper models.

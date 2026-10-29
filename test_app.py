@@ -145,6 +145,88 @@ class ProjectTest(unittest.TestCase):
         line = Project(self.dir).state()["lines"][0]
         self.assertEqual((line["unsure"], line["mixed"], line["edited"]), (True, False, False))
 
+    def lined(self, text, words, **kw):
+        upload(self.p, "1-a.wav", wav())
+        sid = self.p.state()["speakers"][0]["id"]
+        self.p.replace_lines(sid, [{**seg(0, text, **kw), "words": words}])
+        return Project(self.dir).state()["lines"][0]
+
+    def saved(self, *lines):
+        upload(self.p, "1-a.wav", wav())
+        sid = self.p.state()["speakers"][0]["id"]
+        self.p.replace_lines(sid, [{"start": i * 10.0, "end": i * 10.0 + kw.pop("length", 5.0), "text": text, "conf": kw.pop("conf", -0.1), **kw}
+                                   for i, (text, kw) in enumerate(lines)])
+        return {l["text"]: l for l in Project(self.dir).state()["lines"]}
+
+    def test_each_cause_gives_its_own_reason(self):
+        got = self.saved(("fine words", dict(words=[pw(" fine"), pw(" words", 0.1)])),
+                         ("อีเขียบ" * 4, dict(suspect=True)),
+                         ("สวัสดี こんにちは", dict(suspect=True)),
+                         ("สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก", dict(suspect=True, length=1.0)),
+                         ("low", dict(conf=-1.2)),
+                         ("old", dict(suspect=True)),
+                         ("fine", dict()))
+        self.assertEqual({t: (l["reasons"], l["unsure"]) for t, l in got.items()},
+                         {"fine words": (["unsure word"], True), "อีเขียบ" * 4: (["repeated phrase"], True),
+                          "สวัสดี こんにちは": (["foreign letters"], True), "สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก": (["timing"], True),
+                          "low": (["low confidence"], True), "old": (["looks made up"], True), "fine": ([], False)})
+
+    def test_several_reasons_come_in_the_stated_order(self):
+        text = "x こんにちは" + "ก" * 40
+        got = self.saved((text, dict(suspect=True, length=1.0, words=[pw("x", 0.1), pw(" " + text[2:])])))
+        self.assertEqual(got[text]["reasons"], ["unsure word", "repeated phrase", "foreign letters", "timing"])
+
+    def test_editing_clears_unsure_reasons_and_underlines(self):
+        got = self.saved(("a b", dict(words=[pw(" a", 0.1), pw(" b")])), ("こんにちは", dict(suspect=True)), ("hello", dict(conf=-1.2)))
+        self.p.edit_lines([{"id": l["id"], "text": t + " แก้"} for t, l in got.items()])
+        for l in Project(self.dir).state()["lines"]:
+            self.assertEqual((l["unsure"], l["reasons"], l["unsure_words"]), (False, [], []), l["text"])
+
+    def test_lines_typed_by_hand_are_never_unsure(self):
+        got = self.saved(("first", dict()))
+        new = self.p.add_line_after(got["first"]["id"])["id"]
+        self.p.edit_lines([{"id": new, "text": "こんにちは " + "ก" * 40}])
+        line = next(l for l in Project(self.dir).state()["lines"] if l["id"] == new)
+        self.assertEqual((line["unsure"], line["reasons"], line["unsure_words"]), (False, [], []))
+
+    def test_line_with_a_word_under_the_cutoff_is_unsure_and_spans_that_word(self):
+        line = self.lined("hello wrold again", [pw(" hello"), pw(" wrold", 0.2), pw(" again")])
+        self.assertTrue(line["unsure"])
+        self.assertEqual([line["text"][s:e] for s, e in line["unsure_words"]], ["wrold"])
+
+    def test_spans_follow_repeated_words_in_order(self):
+        line = self.lined("no no no", [pw(" no"), pw(" no", 0.1), pw(" no", 0.1)])
+        self.assertEqual(line["unsure_words"], [[3, 5], [6, 8]])
+
+    def test_touching_thai_pieces_make_one_unsure_word(self):
+        line = self.lined("โดนดองครีม", [pw("โดน"), pw("ดอง", 0.3), pw("ครีม", 0.2)])
+        self.assertEqual([line["text"][s:e] for s, e in line["unsure_words"]], ["ดองครีม"])
+
+    def test_confident_words_are_not_unsure_whatever_the_line_confidence(self):
+        line = self.lined("hello world", [pw(" hello"), pw(" world", 0.5)], conf=-2.0)
+        self.assertEqual((line["unsure"], line["unsure_words"]), (False, []))
+
+    def test_editing_the_text_clears_the_unsure_words(self):
+        line = self.lined("hello wrold", [pw(" hello"), pw(" wrold", 0.2)])
+        self.p.edit_lines([{"id": line["id"], "text": "hello world"}])
+        line = self.p.state()["lines"][0]
+        self.assertEqual((line["unsure"], line["unsure_words"]), (False, []))
+
+    def test_old_line_without_words_still_uses_line_confidence(self):
+        self.dir.mkdir()
+        (self.dir / "project.json").write_text(json.dumps({
+            "speakers": [{"id": "s1", "name": "Old", "file": "s1.flac", "ext": ".flac", "duration": None, "source": "1-Old.flac"}],
+            "lines": [{"id": "l2", "spk": "s1", "start": 1.0, "end": 2.0, "text": "hi there", "conf": -1.5, "ok": False}],
+            "seq": 2}))
+        line = Project(self.dir).state()["lines"][0]
+        self.assertEqual((line["unsure"], line["unsure_words"]), (True, []))
+
+    def test_words_are_stored_rounded_and_stay_out_of_exports(self):
+        line = self.lined("hello", [pw(" hello", 0.123456)])
+        self.assertEqual(line["words"], [pw(" hello", 0.123)])
+        self.assertNotIn("words", self.p.export("json")[0])
+        self.assertNotIn("0.123", self.p.export("txt")[0] + self.p.export("srt")[0])
+
     def test_reset_keeps_unrelated_files(self):
         self.two()
         (self.dir / "keep.txt").write_text("mine")
@@ -176,7 +258,8 @@ class ProjectTest(unittest.TestCase):
 
 class HallucinationRuleTest(unittest.TestCase):
     def test_flags_repeats_and_foreign_scripts(self):
-        for text in ["แก ร ั ติ เลย อี เข ีย บ อี เข ีย บ อี เข ีย บ ไม่ ทัน พอ เล่น", "อีเขียบ อีเขียบ อีเขียบ",
+        for text in ["แก ร ั ติ เลย อี เข ีย บ อี เข ีย บ อี เข ีย บ อี เข ีย บ ไม่ ทัน พอ เล่น", "อีเขียบ อีเขียบ อีเขียบ อีเขียบ",
+                     "กี่หน้ากี่หน้ากี่หน้ากี่หน้า",
                      "además habíaон", "складดิงตรงนี้", "เออ ตอนนี้一點ก็เดี๋ยว", "Mike is cursing too, Γειά"]:
             self.assertTrue(looks_hallucinated(text), text)
 
@@ -184,7 +267,7 @@ class HallucinationRuleTest(unittest.TestCase):
         for text in ["เรียนแพทย์ดีกว่า", "No Way", "KMIT Open Courtware", "Essential Principal เลยนะเว้ย",
                      "อ่า ฮ่า ฮ่า ฮ่า", "เล่นๆ ตอนข้าง ตรงชีพหว่ะ", "เสียไป ๆ บางเมื่อ ๆ ๆ เยอะ ๆ", "เล่มละพัน 1,000 บาท?",
                      "Sami in år 2000", "Tiếng Việt", "นะนะนะนะนะ", "ไม่ไม่ไม่ไม่", "ฮ่าฮ่าฮ่าฮ่า", "ha ha ha ha",
-                     "555555555", "1000000000"]:
+                     "555555555", "1000000000", "กี่หน้ากี่หน้ากี่หน้า", "อีเขียบ อีเขียบ อีเขียบ"]:
             self.assertFalse(looks_hallucinated(text), text)
 
 
@@ -196,7 +279,33 @@ def lines(*segments):
     return [(l["text"], round(l["start"], 2), round(l["end"], 2)) for l in lines_from_segments(segments)]
 
 
+def full_lines(*segments):
+    return list(lines_from_segments(segments))
+
+
+def pw(text, prob=0.9):
+    return {"text": text, "prob": prob}
+
+
 class LinesFromSegmentsTest(unittest.TestCase):
+    def test_whole_segment_line_carries_all_its_words(self):
+        words = [w(" hello", 0.0, 0.4, 0.2), w(" world", 0.4, 0.8)]
+        self.assertEqual(full_lines({**seg(0, " hello world"), "words": words})[0]["words"], [pw(" hello", 0.2), pw(" world")])
+
+    def test_segment_without_words_gives_empty_words(self):
+        self.assertEqual(full_lines(seg(0, "hello"))[0]["words"], [])
+
+    def test_split_line_carries_only_its_own_words(self):
+        words = [w(" one", 0.0, 0.3), w(" two", 0.3, 0.6, 0.1), w(" three", 5.0, 5.3), w(" four", 5.3, 5.6)]
+        got = full_lines({**seg(0, "one two three four"), "end": 5.6, "words": words})
+        self.assertEqual([(l["text"], l["words"]) for l in got],
+                         [("one two", [pw(" one"), pw(" two", 0.1)]), ("three four", [pw(" three"), pw(" four")])])
+
+    def test_joined_fragments_carry_all_parts_words_in_order(self):
+        piece = lambda t, a: {**seg(a, t), "end": a + 0.1, "words": [w(t, a, a + 0.1, 0.4)]}
+        got = full_lines(piece("ก", 0.0), piece("็คือ", 0.1))
+        self.assertEqual([(l["text"], l["words"]) for l in got], [("ก็คือ", [pw("ก", 0.4), pw("็คือ", 0.4)])])
+
     def test_segment_without_words_is_one_line_and_filters_still_apply(self):
         self.assertEqual(lines(seg(0, " hello "), seg(1, "  "), seg(2, "noise", conf=-1.5, no_speech=0.9), seg(3, "world")),
                          [("hello", 0, 1), ("world", 3, 4)])
@@ -268,6 +377,12 @@ class LinesFromSegmentsTest(unittest.TestCase):
                                         {**seg(60.0, "เออ แพงจังอะ"), "end": 61.0}]))
         self.assertEqual([(l["text"], l["suspect"]) for l in out],
                          [("สินค้า คงเหลือ สิบเอ็ด บาท", True), ("เออ แพงจังอะ", False)])
+
+    def test_repeat_needs_four_in_a_row_and_short_lines_are_never_too_fast(self):
+        out = list(lines_from_segments([{**seg(0, "กี่หน้ากี่หน้ากี่หน้า"), "end": 3.0}, {**seg(3, "กี่หน้ากี่หน้ากี่หน้ากี่หน้า"), "end": 6.0},
+                                        {**seg(6, "ขอบคุณครับ"), "end": 6.1}, {**seg(7, "ขอบคุณครับขอบคุณครับ"), "end": 7.5},
+                                        {**seg(9, "สวัสดีครับ ผมชื่อสมชาย"), "end": 9.5}, {**seg(10, "Gamma Γειά"), "end": 12.0}]))
+        self.assertEqual([l["suspect"] for l in out], [False, True, False, True, True, True])
 
     def test_split_lines_get_their_own_confidence(self):
         words = [w(" ดี", 0.0, 0.4, 0.9), w(" มาก", 0.4, 0.8, 0.9), w(" xq", 3.0, 3.4, 0.05)]
@@ -429,6 +544,12 @@ class JobTest(unittest.TestCase):
         self.assertNotIn("t0", st)
         self.assertEqual([t for _, t in texts(self.p)], ["hello", "world"])
         self.assertEqual(self.p.speaker(self.sid)["duration"], 4.0)
+
+    def test_words_reach_the_state(self):
+        class Worded(FakeEngine):
+            segments = [{**seg(0, "hello"), "words": [w("hello", 0.0, 0.5, 0.2)]}]
+        self.run_job(Worded)
+        self.assertEqual(self.p.state()["lines"][0]["words"], [pw("hello", 0.2)])
 
     def test_success_records_the_run_options(self):
         self.run_job(FakeEngine, language="th", prompt=" ขนุน, Go Fiber ")
