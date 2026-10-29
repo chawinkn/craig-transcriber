@@ -109,6 +109,7 @@ The app walks you through four steps:
 3. **Check and fix.**
    - Press ▶ to hear a line, type to correct it, and tick **reviewed** (or press `Alt+Enter` to tick it and move on).
    - Start with the lines tagged **unsure** or **TH/EN**, using the "worth a second look" filter.
+     A line is **unsure** when the model was not confident, or when its text looks made up (a phrase repeated over and over, letters that are neither Thai nor Latin, or faster speech than anyone manages). Correcting the text clears the made-up tag; a low-confidence tag stays. **TH/EN** marks Thai with English words in it.
 4. **Save your work.** Download the transcript as `.txt`, `.srt` or `.json`.
 
 ## Choosing a model
