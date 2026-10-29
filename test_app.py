@@ -235,6 +235,10 @@ class LinesFromSegmentsTest(unittest.TestCase):
                                {**seg(0.5, "จะไปเลย"), "end": 2.0}),
                          [("มันก็จะไปเลย", 0.0, 2.0)])
 
+    def test_line_cut_inside_a_word_joins_the_next_even_after_a_pause(self):
+        self.assertEqual(lines(seg(0, "ก"), seg(3, "็คือแบบว่า"), seg(8, "โ"), seg(12, "อเค")),
+                         [("ก็คือแบบว่า", 0, 4), ("โอเค", 8, 13)])
+
     def test_tiny_lines_far_apart_stay_separate(self):
         self.assertEqual(lines(seg(0, "ใช่"), seg(5, "ครับ")), [("ใช่", 0, 1), ("ครับ", 5, 6)])
 

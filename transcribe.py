@@ -152,13 +152,16 @@ def _line(start, end, text, conf):
 
 
 def _join_fragments(lines):
-    """Join a run of tiny Lines (3 characters or fewer, under LINE_GAP apart) and the Line after it, up to LINE_MAX.
-    Some models emit a segment per piece, which reads as one character per Line."""
+    """Join Lines that were cut inside a word: a Line starting with a Thai vowel or mark that cannot start a word,
+    or after one ending in a vowel written before its consonant. Also join a run of tiny Lines (3 characters or
+    fewer, under LINE_GAP apart) with the Line after it. Some models emit a segment per piece, which reads as one
+    character per Line. A joined Line stays within LINE_MAX."""
     tiny = lambda l: len(re.sub(r"\s+", "", l["text"])) <= 3
     parts = []
     for ln in lines:
-        if parts and tiny(parts[0]) and all(tiny(p) for p in parts) and ln["start"] - parts[-1]["end"] < LINE_GAP \
-                and ln["end"] - parts[0]["start"] <= LINE_MAX:
+        if parts and ln["end"] - parts[0]["start"] <= LINE_MAX and (
+                _THAI_FOLLOWING.match(ln["text"][:1]) or _THAI_LEADING.match(parts[-1]["text"][-1:])
+                or (all(tiny(p) for p in parts) and ln["start"] - parts[-1]["end"] < LINE_GAP)):
             parts.append(ln)
             continue
         if parts:
