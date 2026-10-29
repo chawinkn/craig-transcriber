@@ -80,12 +80,7 @@ def model_catalog(data_dir):
 
 
 def looks_hallucinated(text):
-    """A phrase of 4+ characters repeated 4+ times in a row, or letters that are neither Thai nor Latin."""
-    if re.search(r"(.{4,}?)\1{3,}", re.sub(r"\s+", "", text)):
-        return True
-    # Latin: Basic through Extended-B (U+024F) plus Extended Additional (U+1E00-1EFF, Vietnamese).
-    return any(ch.isalpha() and not ("\u0e00" <= ch <= "\u0e7f" or ch <= "\u024f" or "\u1e00" <= ch <= "\u1eff")
-               for ch in text)
+    return project.repeats(text) or project.foreign_letters(text)
 
 
 # No hallucination_silence_threshold: on noisy Thai audio it dropped ~70% of real speech (#4).
@@ -94,7 +89,7 @@ DECODE = dict(beam_size=5, vad_filter=True, vad_parameters=dict(min_silence_dura
               condition_on_previous_text=False, word_timestamps=True, no_repeat_ngram_size=10)
 
 # Measured on one-minute Thai clips: pauses of 0.6 s keep every Line under 12 s; 30 chars/s is faster than anyone speaks.
-LINE_GAP, LINE_MAX, LINE_MAX_CPS = 0.6, 12.0, 30.0
+LINE_GAP, LINE_MAX = 0.6, 12.0
 
 
 def _starts_word(words, j):
@@ -146,9 +141,7 @@ def _spans(words):
 
 
 def _line(start, end, text, conf, words):
-    chars = len(re.sub(r"\s+", "", text))
-    too_fast = chars >= 20 and chars / max(end - start, 0.01) > LINE_MAX_CPS
-    return {"start": start, "end": end, "text": text, "conf": conf, "suspect": too_fast or looks_hallucinated(text),
+    return {"start": start, "end": end, "text": text, "conf": conf, "suspect": project.too_fast(text, start, end) or looks_hallucinated(text),
             "words": [{"text": w["text"], "prob": w["prob"]} for w in words]}
 
 

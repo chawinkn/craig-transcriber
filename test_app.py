@@ -151,6 +151,44 @@ class ProjectTest(unittest.TestCase):
         self.p.replace_lines(sid, [{**seg(0, text, **kw), "words": words}])
         return Project(self.dir).state()["lines"][0]
 
+    def saved(self, *lines):
+        upload(self.p, "1-a.wav", wav())
+        sid = self.p.state()["speakers"][0]["id"]
+        self.p.replace_lines(sid, [{"start": i * 10.0, "end": i * 10.0 + kw.pop("length", 5.0), "text": text, "conf": kw.pop("conf", -0.1), **kw}
+                                   for i, (text, kw) in enumerate(lines)])
+        return {l["text"]: l for l in Project(self.dir).state()["lines"]}
+
+    def test_each_cause_gives_its_own_reason(self):
+        got = self.saved(("fine words", dict(words=[pw(" fine"), pw(" words", 0.1)])),
+                         ("อีเขียบ" * 4, dict(suspect=True)),
+                         ("สวัสดี こんにちは", dict(suspect=True)),
+                         ("สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก", dict(suspect=True, length=1.0)),
+                         ("low", dict(conf=-1.2)),
+                         ("old", dict(suspect=True)),
+                         ("fine", dict()))
+        self.assertEqual({t: (l["reasons"], l["unsure"]) for t, l in got.items()},
+                         {"fine words": (["unsure word"], True), "อีเขียบ" * 4: (["repeated phrase"], True),
+                          "สวัสดี こんにちは": (["foreign letters"], True), "สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก": (["timing"], True),
+                          "low": (["low confidence"], True), "old": (["looks made up"], True), "fine": ([], False)})
+
+    def test_several_reasons_come_in_the_stated_order(self):
+        text = "x こんにちは" + "ก" * 40
+        got = self.saved((text, dict(suspect=True, length=1.0, words=[pw("x", 0.1), pw(" " + text[2:])])))
+        self.assertEqual(got[text]["reasons"], ["unsure word", "repeated phrase", "foreign letters", "timing"])
+
+    def test_editing_clears_unsure_reasons_and_underlines(self):
+        got = self.saved(("a b", dict(words=[pw(" a", 0.1), pw(" b")])), ("こんにちは", dict(suspect=True)), ("hello", dict(conf=-1.2)))
+        self.p.edit_lines([{"id": l["id"], "text": t + " แก้"} for t, l in got.items()])
+        for l in Project(self.dir).state()["lines"]:
+            self.assertEqual((l["unsure"], l["reasons"], l["unsure_words"]), (False, [], []), l["text"])
+
+    def test_lines_typed_by_hand_are_never_unsure(self):
+        got = self.saved(("first", dict()))
+        new = self.p.add_line_after(got["first"]["id"])["id"]
+        self.p.edit_lines([{"id": new, "text": "こんにちは " + "ก" * 40}])
+        line = next(l for l in Project(self.dir).state()["lines"] if l["id"] == new)
+        self.assertEqual((line["unsure"], line["reasons"], line["unsure_words"]), (False, [], []))
+
     def test_line_with_a_word_under_the_cutoff_is_unsure_and_spans_that_word(self):
         line = self.lined("hello wrold again", [pw(" hello"), pw(" wrold", 0.2), pw(" again")])
         self.assertTrue(line["unsure"])
