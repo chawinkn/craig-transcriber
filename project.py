@@ -47,6 +47,7 @@ def unsure_spans(text, words):
 
 
 LINE_MAX_CPS = 30.0  # faster than anyone speaks
+MISSED_MIN_SECONDS, MISSED_MAX_CPS = 4.0, 2.0  # on the 2026-10-29 recording: 3 Lines, all real dropped speech
 
 
 def repeats(text):
@@ -65,11 +66,16 @@ def too_fast(text, start, end):
     return chars >= 20 and chars / max(end - start, 0.01) > LINE_MAX_CPS
 
 
+def too_slow(text, start, end):
+    return end - start >= MISSED_MIN_SECONDS and len(re.sub(r"\s+", "", text)) / (end - start) < MISSED_MAX_CPS
+
+
 def review_flags(line):
     """reasons: why the Line is unsure, in a fixed order; empty once the text differs from what the model wrote
     (edited, which includes Lines typed in by hand). The made-up causes are worked out again from the text and times,
     but only for Lines flagged suspect; a flag no rule explains (older runs) reads "looks made up". mixed: Thai with
-    English. unsure_words: character spans in the text."""
+    English. unsure_words: character spans in the text. "missed speech" comes last: a Line of 4 s or more with under
+    2 characters per second."""
     text, words = line["text"], line.get("words")
     edited = text != line.get("orig", text)
     spans = [] if edited or not words else unsure_spans(text, words)
@@ -81,8 +87,30 @@ def review_flags(line):
             causes = [(repeats(text), "repeated phrase"), (foreign_letters(text), "foreign letters"),
                       (too_fast(text, line.get("start", 0), line.get("end", 0)), "timing")]
             reasons += [r for hit, r in causes if hit] or ["looks made up"]
+        if text.strip() and too_slow(text, line.get("start", 0), line.get("end", 0)):
+            reasons.append("missed speech")
     return {"edited": edited, "unsure_words": spans, "reasons": reasons, "unsure": bool(reasons),
             "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2}
+
+
+MISSED_MIN_VOICE = 2.0  # seconds of voice with no Line over it that count as Missed speech
+
+
+def missed_stretches(speech, spans):
+    """Parts of the voice stretches [start, end] that no span covers, kept when MISSED_MIN_VOICE or longer."""
+    out, spans = [], sorted(spans)
+    keep = lambda a, b: out.append({"start": round(a, 2), "end": round(b, 2)}) if round(b - a, 2) >= MISSED_MIN_VOICE else None
+    for start, end in speech:
+        pos = start
+        for s, e in spans:
+            if e <= pos:
+                continue
+            if s >= end:
+                break
+            keep(pos, s)
+            pos = max(pos, e)
+        keep(pos, end)
+    return out
 
 
 def speaker_name_from(filename):
@@ -141,7 +169,7 @@ class Project:
 
     def state(self):
         """Each Line carries its review flags; a Speaker is "touched" when a Line of theirs was reviewed,
-        edited or deleted since the model wrote it."""
+        edited or deleted since the model wrote it, and has its Missed speech stretches."""
         with self._lock:
             st = copy.deepcopy({"speakers": self._p["speakers"], "lines": self._sorted_lines()})
         for l in st["lines"]:
@@ -149,6 +177,9 @@ class Project:
         touched = {l["spk"] for l in st["lines"] if l["ok"] or l["edited"]}
         for sp in st["speakers"]:
             sp["touched"] = sp["id"] in touched or bool(sp.pop("deleted_by_hand", False))
+            gone = sp.get("dismissed") or []
+            sp["missed"] = [m for m in missed_stretches(sp.get("speech") or [], [(l["start"], l["end"]) for l in st["lines"] if l["spk"] == sp["id"]])
+                            if not any(a <= (m["start"] + m["end"]) / 2 <= b for a, b in gone)]
         return st
 
     def speaker(self, sid):
@@ -263,6 +294,24 @@ class Project:
             self._save()
             return dict(line)
 
+    def add_line_at(self, sid, start, end):
+        with self._lock:
+            nums = all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (start, end))
+            if not self._speaker(sid) or not nums or not 0 <= start < end:
+                return None
+            line = {"id": self._new_id("l"), "spk": sid, "start": round(float(start), 2),
+                    "end": round(float(end), 2), "text": "", "orig": "", "conf": None, "ok": False}
+            self._p["lines"].append(line)
+            self._save()
+            return dict(line)
+
+    def dismiss_missed(self, sid, start, end):
+        with self._lock:
+            sp = self._speaker(sid)
+            if sp and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (start, end)):
+                sp.setdefault("dismissed", []).append([start, end])
+                self._save()
+
     def delete_line(self, line_id):
         with self._lock:
             line = self._line(line_id)
@@ -293,7 +342,7 @@ class Project:
             self._save()
         (self.dir / "audio" / sp["file"]).unlink(missing_ok=True)
 
-    def replace_lines(self, sid, segments, duration=None, run=None):
+    def replace_lines(self, sid, segments, duration=None, run=None, speech=None):
         with self._lock:
             sp = self._speaker(sid)
             if not sp:
@@ -302,17 +351,41 @@ class Project:
                 sp["duration"] = duration
             if run is not None:
                 sp["run"] = run
+            if speech is not None:
+                sp["speech"] = speech
             sp.pop("deleted_by_hand", None)
+            sp.pop("dismissed", None)
             self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid]
-            for s in segments:
-                conf = s.get("conf")
-                self._p["lines"].append({"id": self._new_id("l"), "spk": sid, "start": round(float(s["start"]), 2),
-                                         "end": round(float(s["end"]), 2), "text": s["text"], "orig": s["text"],
-                                         "conf": None if conf is None else round(float(conf), 3), "ok": False,
-                                         "suspect": bool(s.get("suspect")),
-                                         "words": [{"text": x["text"], "prob": round(float(x["prob"]), 3)}
-                                                   for x in s.get("words") or []]})
+            self._add_lines(sid, segments)
             self._save()
+
+    def replace_stretch(self, sid, start, end, segments):
+        """Swap this Speaker's Lines whose midpoint is in [start, end] for the new ones whose midpoint is too;
+        everything else, and the Speaker's run, speech and dismissed stretches, stays."""
+        inside = lambda l: start <= (l["start"] + l["end"]) / 2 <= end
+        with self._lock:
+            if not self._speaker(sid):
+                return
+            self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid or not inside(l)]
+            self._add_lines(sid, [s for s in segments if inside(s)])
+            self._save()
+
+    def _add_lines(self, sid, segments):
+        for s in segments:
+            conf = s.get("conf")
+            self._p["lines"].append({"id": self._new_id("l"), "spk": sid, "start": round(float(s["start"]), 2),
+                                     "end": round(float(s["end"]), 2), "text": s["text"], "orig": s["text"],
+                                     "conf": None if conf is None else round(float(conf), 3), "ok": False,
+                                     "suspect": bool(s.get("suspect")),
+                                     "words": [{"text": x["text"], "prob": round(float(x["prob"]), 3)}
+                                               for x in s.get("words") or []]})
+
+    def set_speech(self, sid, speech):
+        with self._lock:
+            sp = self._speaker(sid)
+            if sp:
+                sp["speech"] = speech
+                self._save()
 
     def reset(self):
         """Forget everything. Only removes our own files (project.json, audio/), not the whole folder."""

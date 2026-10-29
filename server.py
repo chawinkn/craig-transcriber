@@ -11,8 +11,8 @@ OK = {"ok": True}
 
 
 def add_line(p, b):
-    line = p.add_line_after(b.get("after"))
-    return {"line": line} if line else ({"error": "No such line"}, 400)
+    line = p.add_line_at(b.get("spk"), b.get("start"), b.get("end")) if "spk" in b else p.add_line_after(b.get("after"))
+    return {"line": line} if line else ({"error": "Could not add a Line there"}, 400)
 
 
 # JSON POST routes: path -> (project, job, body) -> response, or (response, status code). Mutators return None.
@@ -22,6 +22,7 @@ POST = {
     "/api/lines": lambda p, j, b: p.edit_lines(b.get("updates", [])) or OK,
     "/api/line/delete": lambda p, j, b: p.delete_line(b.get("id")) or OK,
     "/api/line/add": lambda p, j, b: add_line(p, b),
+    "/api/missed/dismiss": lambda p, j, b: p.dismiss_missed(b.get("spk"), b.get("start"), b.get("end")) or OK,
     "/api/speaker": lambda p, j, b: p.rename_speaker(b.get("id"), b.get("name")) or OK,
     "/api/speaker/remove": lambda p, j, b: p.remove_speaker(b.get("id")) or OK,
     "/api/reset": lambda p, j, b: ({"error": "Stop the transcription first"}, 400) if j.running else (p.reset() or OK),

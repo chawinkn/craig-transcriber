@@ -91,6 +91,10 @@ DECODE = dict(beam_size=5, vad_filter=True, vad_parameters=dict(min_silence_dura
 # Measured on one-minute Thai clips: pauses of 0.6 s keep every Line under 12 s.
 LINE_GAP, LINE_MAX = 0.6, 12.0
 
+# PONYTAIL: the part is cut out of the audio, not given as clip_timestamps, because faster-whisper ignores vad_filter
+# when clip_timestamps is set, and VAD is what keeps silence from becoming made-up text.
+CLIP_PAD = 1.0
+
 
 def _starts_word(words, j):
     """Thai "words" are token pieces: a piece starts a word after a space, or where Latin follows non-Latin."""
@@ -252,18 +256,31 @@ class WhisperEngine:
             raise RuntimeError("no audio could be read from this file")
         return np.concatenate(chunks).astype(np.float32) / 32768.0
 
-    def transcribe(self, audio_path, language, prompt):
-        """(duration in seconds, iterator of {start, end, text, conf, no_speech, words}). Sets self.language."""
+    def transcribe(self, audio_path, language, prompt, clip=None):
+        """(duration in seconds of the whole audio, iterator of {start, end, text, conf, no_speech, words}). Sets
+        self.language. With clip=(start, end) only that part, padded CLIP_PAD each side, is transcribed; times stay
+        in the whole audio's time."""
         audio = self.load_audio(audio_path)
+        total, lo = len(audio) / 16000.0, 0.0
+        if clip:
+            lo = max(0.0, clip[0] - CLIP_PAD)
+            audio = audio[int(lo * 16000):int(min(total, clip[1] + CLIP_PAD) * 16000)]
         segments, info = self._model.transcribe(audio, language=language or None, initial_prompt=prompt or None,
                                                 hotwords=prompt or None, **DECODE)
         self.language = getattr(info, "language", "")
-        return len(audio) / 16000.0, ({"start": float(s.start), "end": float(s.end), "text": s.text,
-                                       "conf": getattr(s, "avg_logprob", None),
-                                       "no_speech": getattr(s, "no_speech_prob", 0) or 0,
-                                       "words": [{"start": float(w.start), "end": float(w.end), "text": w.word,
-                                                  "prob": float(w.probability)} for w in (getattr(s, "words", None) or [])]}
-                                      for s in segments)
+        return total, ({"start": lo + float(s.start), "end": lo + float(s.end), "text": s.text,
+                        "conf": getattr(s, "avg_logprob", None),
+                        "no_speech": getattr(s, "no_speech_prob", 0) or 0,
+                        "words": [{"start": lo + float(w.start), "end": lo + float(w.end), "text": w.word,
+                                   "prob": float(w.probability)} for w in (getattr(s, "words", None) or [])]}
+                       for s in segments)
+
+    def voice(self, audio_path):
+        """[[start, end], ...] seconds where there is voice, from the same VAD and silence length as decoding."""
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+        stamps = get_speech_timestamps(self.load_audio(audio_path),
+                                       VadOptions(min_silence_duration_ms=DECODE["vad_parameters"]["min_silence_duration_ms"]))
+        return [[round(t["start"] / 16000, 2), round(t["end"] / 16000, 2)] for t in stamps]
 
 
 def _engine_worker(conn, inner, model_name, prefer_cpu):
@@ -280,6 +297,12 @@ def _engine_worker(conn, inner, model_name, prefer_cpu):
             msg = conn.recv()
         except EOFError:
             return
+        if msg[0] == "voice":
+            try:
+                conn.send(("voice", engine.voice(msg[1])))
+            except Exception as e:
+                conn.send(("error", f"{type(e).__name__}: {e}"))
+            continue
         if msg[0] != "transcribe":
             continue                                # a cancel that arrived after the run had already ended
         try:
@@ -354,13 +377,20 @@ class ProcessEngine:
         self._stop()
         self._start(True)
 
-    def transcribe(self, audio_path, language, prompt):
-        self._conn.send(("transcribe", str(audio_path), language, prompt))
+    def transcribe(self, audio_path, language, prompt, clip=None):
+        self._conn.send(("transcribe", str(audio_path), language, prompt, clip))
         kind, rest = self._recv()
         if kind == "error":
             raise RuntimeError(rest[0])
         dur, self.language = rest
         return dur, _SegmentStream(self)
+
+    def voice(self, audio_path):
+        self._conn.send(("voice", str(audio_path)))
+        kind, rest = self._recv()
+        if kind == "error":
+            raise RuntimeError(rest[0])
+        return rest[0]
 
 
 class _SegmentStream:
@@ -403,6 +433,8 @@ class RunOptions:
     language: "str | None"
     prefer_cpu: bool
     prompt: str
+    check: bool = False     # only find where there is voice, nothing is transcribed
+    stretch: "tuple | None" = None     # (start, end) seconds of one Speaker to transcribe again, nothing else changes
 
 
 class Job:
@@ -450,6 +482,13 @@ class Job:
             ids = [i for i in opts.get("speakers", []) if self.project.speaker(i)]
             if not ids:
                 return {"error": "Choose at least one person"}
+            stretch = None
+            if "start" in opts or "end" in opts:
+                t = (opts.get("start"), opts.get("end"))
+                if len(ids) != 1 or opts.get("check") or not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in t) \
+                        or not 0 <= t[0] < t[1]:
+                    return {"error": "A part can only be transcribed again for one person, with a start and an end"}
+                stretch = (float(t[0]), float(t[1]))
             model = source = opts.get("model") or "small"
             if model in THAI_MODELS:
                 state, missing = thai_model_state(self.project.dir, model)
@@ -461,8 +500,8 @@ class Job:
                 source = str(model_dir(self.project.dir, model))
             self._t0 = time.time()
             run = RunOptions(model, source, opts.get("language") or None, opts.get("device") == "cpu",
-                             (opts.get("prompt") or "").strip())
-            self._st = dict(running=True, cancel=False, phase="loading", message="Starting…", note="", error=None,
+                             (opts.get("prompt") or "").strip(), bool(opts.get("check")), stretch)
+            self._st = dict(running=True, check=run.check, stretch=stretch, cancel=False, phase="loading", message="Starting…", note="", error=None,
                             recent=[], pos=0.0, dur=0.0, audio_done=0.0, index=0, count=len(ids), who="", model=model)
             self._thread = threading.Thread(target=self._run, daemon=True, args=(ids, run))
             self._thread.start()
@@ -473,7 +512,7 @@ class Job:
         try:
             self._set(phase="loading", message="Getting the model ready…")
             key = (run.source, run.prefer_cpu)
-            if self._engine_key != key:
+            if self._engine_key != key and not (run.check and self._engine):    # voice detection needs no particular model
                 self._engine = self._engine_key = None
                 self._engine = self.engine_cls(run.source, run.prefer_cpu, self._on_status)
                 self._engine_key = key
@@ -485,7 +524,15 @@ class Job:
                 if not sp or self._cancelled:
                     break
                 self._set(phase="working", who=sp["name"], index=idx, count=len(ids), pos=0.0, audio_done=done,
-                          dur=sp.get("duration") or 0.0, message="")
+                          dur=0.0 if run.check else run.stretch[1] - run.stretch[0] if run.stretch else sp.get("duration") or 0.0,
+                          message="")
+                if run.check:
+                    try:
+                        self._check(engine, sid, sp["name"])
+                    except EngineCrashed:
+                        self._engine = self._engine_key = None
+                        raise
+                    continue
                 for attempt in (0, 1):
                     try:
                         done += self._transcribe(engine, sid, sp["name"], run)
@@ -508,6 +555,14 @@ class Job:
         finally:
             self._set(running=False)
 
+    def _check(self, engine, sid, name):
+        a = self.project.audio(sid)
+        if not a:
+            raise RuntimeError(f"the audio file for {name} is missing")
+        speech = self._voice(engine, name, a[0])
+        if speech is not None:
+            self.project.set_speech(sid, speech)
+
     def _transcribe(self, engine, sid, name, run):
         """One person: collect their lines locally, and only a finished run replaces the old ones.
         Returns the audio length, so the estimate can count what earlier speakers took."""
@@ -515,13 +570,14 @@ class Job:
         if not a:
             raise RuntimeError(f"the audio file for {name} is missing")
         self._set(message=f"Reading {name}'s audio…")
-        dur, segments = engine.transcribe(a[0], run.language, run.prompt)
+        dur, segments = engine.transcribe(a[0], run.language, run.prompt, run.stretch)
         try:
-            return self._collect(engine, sid, name, run, dur, segments)
+            return self._collect(engine, sid, name, run, dur, segments, a[0])
         finally:
             getattr(segments, "close", lambda: None)()
 
-    def _collect(self, engine, sid, name, run, dur, segments):
+    def _collect(self, engine, sid, name, run, dur, segments, path):
+        t0, dur = (run.stretch[0], run.stretch[1] - run.stretch[0]) if run.stretch else (0.0, dur)
         self._set(dur=dur, message="")
         detected = "" if run.language else getattr(engine, "language", "")
         if not run.language:
@@ -530,14 +586,28 @@ class Job:
         for line in lines_from_segments(segments):
             if self._cancelled:
                 return dur                          # keep their previous lines
-            self._set(pos=float(line["end"]))
+            self._set(pos=min(max(float(line["end"]) - t0, 0.0), dur))
             kept.append(line)
             with self._lock:
                 self._st["recent"] = (self._st["recent"] + [f"{name} [{project.hms(line['start'])}] {line['text']}"])[-4:]
+        if run.stretch and not self._cancelled:
+            self.project.replace_stretch(sid, *run.stretch, kept)
+            return dur
+        speech = self._voice(engine, name, path) if not self._cancelled else None
         if not self._cancelled:
             record = {"model": run.model, "language": run.language or "auto", "vocabulary": run.prompt,
                       "device": engine.device, "at": time.time()}
             if not run.language:
                 record["detected"] = detected
-            self.project.replace_lines(sid, kept, dur, record)
+            self.project.replace_lines(sid, kept, dur, record, speech)
         return dur
+
+    def _voice(self, engine, name, path):
+        """Where there is voice; None when it could not be found, which must not lose a finished transcription."""
+        self._set(message=f"Finding where {name} speaks…")
+        try:
+            return engine.voice(path)
+        except EngineCrashed:
+            raise
+        except Exception as e:
+            self._set(note=f"Could not find where {name} speaks ({str(e)[:160]}), so Missed speech is not shown for them.")
