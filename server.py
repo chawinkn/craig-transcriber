@@ -8,6 +8,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 import transcribe
 
 OK = {"ok": True}
+STATIC = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/style.css": ("style.css", "text/css; charset=utf-8"),
+}
 
 
 def add_line(p, b):
@@ -76,8 +81,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         u = urlparse(self.path)
         try:
-            if u.path == "/":
-                return self.send_bytes(200, (Path(__file__).parent / "static" / "index.html").read_bytes(), "text/html; charset=utf-8")
+            if u.path in STATIC:
+                name, ctype = STATIC[u.path]
+                return self.send_bytes(200, (Path(__file__).parent / "static" / name).read_bytes(), ctype)
             if u.path == "/api/state":
                 env = {"engine": self.job.engine_cls.available(), "cuda": transcribe.cuda_count(), "py": sys.version.split()[0],
                        "models": transcribe.model_catalog(self.project.dir)}
