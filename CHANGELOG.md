@@ -1,5 +1,11 @@
 # craig-transcriber
 
+## 0.6.1
+
+### Patch Changes
+
+- [#43](https://github.com/chawinkn/craig-transcriber/pull/43) [`dcc601a`](https://github.com/chawinkn/craig-transcriber/commit/dcc601a1409af0de9f4fe0d9e536a8b69e6481cb) Thanks [@chawinkn](https://github.com/chawinkn)! - The "Download subtitles (.srt)" and "Download data (.json)" buttons use the page's text colour instead of dark-blue link text.
+
 ## 0.6.0
 
 ### Minor Changes
