@@ -11,4 +11,5 @@ tests
 scripts
 docs
 biome.json
+.prettierrc.json
 *.egg-info
