@@ -9,7 +9,7 @@ import weakref
 from dataclasses import dataclass
 from pathlib import Path
 
-import project
+from . import project
 
 
 def add_nvidia_dll_dirs():
@@ -563,11 +563,14 @@ class Job:
             if model in THAI_MODELS:
                 state, missing = thai_model_state(self.project.dir, model)
                 if state == "missing":
-                    return {"error": f"The {model} model is not installed yet. Run: python convert_model.py {model}"}
+                    return {
+                        "error": f"The {model} model is not installed yet. "
+                        f"Run: python -m craig_transcriber.convert_model {model}"
+                    }
                 if state == "incomplete":
                     return {
                         "error": f"The {model} model is incomplete (missing {', '.join(missing)}). "
-                        f"Run again: python convert_model.py {model}"
+                        f"Run again: python -m craig_transcriber.convert_model {model}"
                     }
                 source = str(model_dir(self.project.dir, model))
             self._t0 = time.time()

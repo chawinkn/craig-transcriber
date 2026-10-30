@@ -1,12 +1,13 @@
 """Install a Thai model (or any Hugging Face Whisper model) for faster-whisper.
 
-Needs extra packages the app itself does not: pip install ctranslate2 transformers torch
+Run: python -m craig_transcriber.convert_model <model> [--data DIR]
+Needs extra packages the app itself does not: pip install ".[convert]"
 """
 
 import argparse
 from pathlib import Path
 
-from transcribe import THAI_MODELS, model_dir
+from .transcribe import THAI_MODELS, model_dir
 
 
 def output_dir(model, data):
@@ -15,9 +16,13 @@ def output_dir(model, data):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        prog="python -m craig_transcriber.convert_model",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("model", help=f"{' or '.join(THAI_MODELS)}, or any Hugging Face Whisper repo id")
-    ap.add_argument("--data", default="craig_work", help="the same --data folder you give main.py")
+    ap.add_argument("--data", default="craig_work", help="the same --data folder you give craig-transcriber")
     args = ap.parse_args()
 
     repo = THAI_MODELS.get(args.model, args.model)

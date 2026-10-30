@@ -2,11 +2,13 @@ craig_work
 .git
 __pycache__
 CLAUDE.md
-test_*.py
+AGENTS.md
+tests
 .venv
 .githooks
 .github
+.claude
 scripts
-ruff.toml
+docs
 biome.json
-requirements-dev.txt
+*.egg-info

@@ -19,6 +19,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: pip install -r requirements-dev.txt
+      - run: pip install -e ".[dev]"
       - run: bash scripts/check.sh
-      - run: python test_app.py
+      - run: python -m unittest discover -s tests

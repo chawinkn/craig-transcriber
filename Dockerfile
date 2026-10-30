@@ -7,8 +7,9 @@ RUN pip install --no-cache-dir faster-whisper \
 ENV HF_HOME=/opt/hf
 RUN python -c "from faster_whisper.utils import download_model; download_model('large-v3')"
 WORKDIR /app
-COPY *.py ./
-COPY static/ static/
+COPY pyproject.toml README.md ./
+COPY src/ src/
+RUN pip install --no-cache-dir .
 VOLUME /data
 EXPOSE 8765
-CMD ["python", "main.py", "--host", "0.0.0.0", "--data", "/data/work", "--no-browser"]
+CMD ["craig-transcriber", "--host", "0.0.0.0", "--data", "/data/work", "--no-browser"]

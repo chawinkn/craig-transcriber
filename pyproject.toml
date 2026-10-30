@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "craig-transcriber"
+version = "0.6.0"
+description = "Turn a Craig multi-track Discord recording into an accurate, speaker-labelled transcript, entirely on your own computer."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = ["faster-whisper"]
+
+[project.optional-dependencies]
+gpu = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"]
+convert = ["ctranslate2", "transformers", "torch"]
+dev = ["ruff==0.17.1"]
+
+[project.scripts]
+craig-transcriber = "craig_transcriber.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+craig_transcriber = ["static/*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+extend-exclude = [".venv", "craig_work", ".claude"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["craig_transcriber"]

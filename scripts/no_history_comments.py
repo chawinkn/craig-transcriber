@@ -3,6 +3,7 @@ import re
 import subprocess
 import sys
 import tokenize
+from pathlib import Path
 
 BAD = re.compile(
     r"(?<![\w#])#\d+\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:measured|reviewer|review said|used to|previously)\b",
@@ -59,8 +60,11 @@ def find(paths):
 
 
 def tracked():
-    out = subprocess.check_output(["git", "ls-files", "*.py", "static/*.js", "static/*.css"], text=True)
-    return out.split()
+    out = subprocess.check_output(
+        ["git", "ls-files", "*.py", "src/craig_transcriber/static/*.js", "src/craig_transcriber/static/*.css"],
+        text=True,
+    )
+    return [f for f in out.split() if Path(f).exists()]
 
 
 if __name__ == "__main__":
