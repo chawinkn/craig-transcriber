@@ -16,21 +16,30 @@ STATIC = {
 
 
 def add_line(p, b):
-    line = p.add_line_at(b.get("spk"), b.get("start"), b.get("end")) if "spk" in b else p.add_line_after(b.get("after"))
+    line = (
+        p.add_line_at(b.get("spk"), b.get("start"), b.get("end"))
+        if "spk" in b
+        else p.add_line_after(b.get("after"))
+    )
     return {"line": line} if line else ({"error": "Could not add a Line there"}, 400)
 
 
-# JSON POST routes: path -> (project, job, body) -> response, or (response, status code). Mutators return None.
+# JSON POST routes: path -> (project, job, body) -> response, or (response, status code).
+# Mutators return None.
 POST = {
     "/api/transcribe": lambda p, j, b: j.start(b),
     "/api/cancel": lambda p, j, b: j.cancel() or OK,
     "/api/lines": lambda p, j, b: p.edit_lines(b.get("updates", [])) or OK,
     "/api/line/delete": lambda p, j, b: p.delete_line(b.get("id")) or OK,
     "/api/line/add": lambda p, j, b: add_line(p, b),
-    "/api/missed/dismiss": lambda p, j, b: p.dismiss_missed(b.get("spk"), b.get("start"), b.get("end")) or OK,
+    "/api/missed/dismiss": lambda p, j, b: (
+        p.dismiss_missed(b.get("spk"), b.get("start"), b.get("end")) or OK
+    ),
     "/api/speaker": lambda p, j, b: p.rename_speaker(b.get("id"), b.get("name")) or OK,
     "/api/speaker/remove": lambda p, j, b: p.remove_speaker(b.get("id")) or OK,
-    "/api/reset": lambda p, j, b: ({"error": "Stop the transcription first"}, 400) if j.running else (p.reset() or OK),
+    "/api/reset": lambda p, j, b: (
+        ({"error": "Stop the transcription first"}, 400) if j.running else (p.reset() or OK)
+    ),
 }
 
 
@@ -60,7 +69,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def send_json(self, obj, code=200):
-        self.send_bytes(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+        self.send_bytes(
+            code,
+            json.dumps(obj, ensure_ascii=False).encode("utf-8"),
+            "application/json; charset=utf-8",
+        )
 
     def read_json(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -68,7 +81,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def allowed(self, post=False):
         """Block DNS rebinding (odd Host) and cross-site POSTs (odd Origin); else 403."""
-        ok = urlparse("//" + self.headers.get("Host", "")).hostname in ("127.0.0.1", "localhost", "::1")
+        ok = urlparse("//" + self.headers.get("Host", "")).hostname in (
+            "127.0.0.1",
+            "localhost",
+            "::1",
+        )
         o = self.headers.get("Origin")
         if post and o is not None:
             ok = ok and urlparse(o).netloc == self.headers.get("Host")
@@ -83,7 +100,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path in STATIC:
                 name, ctype = STATIC[u.path]
-                return self.send_bytes(200, (Path(__file__).parent / "static" / name).read_bytes(), ctype)
+                return self.send_bytes(
+                    200, (Path(__file__).parent / "static" / name).read_bytes(), ctype
+                )
             if u.path == "/api/state":
                 env = {
                     "engine": self.job.engine_cls.available(),
@@ -127,7 +146,9 @@ class Handler(BaseHTTPRequestHandler):
                     start = max(0, size - int(m.group(2)))
                 end = min(end, size - 1)
                 if start > end:
-                    return self.send_bytes(416, b"", "text/plain", {"Content-Range": f"bytes */{size}"})
+                    return self.send_bytes(
+                        416, b"", "text/plain", {"Content-Range": f"bytes */{size}"}
+                    )
                 code = 206
         self.send_response(code)
         self.send_header("Content-Type", mime)
@@ -166,7 +187,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def upload(self, name):
         try:
-            added = self.project.add_upload(self.rfile, int(self.headers.get("Content-Length") or 0), unquote(name))
+            added = self.project.add_upload(
+                self.rfile, int(self.headers.get("Content-Length") or 0), unquote(name)
+            )
         except ValueError as e:
             return self.send_json({"error": str(e)}, 400)
         self.send_json({"added": added})

@@ -35,7 +35,10 @@ class ServerTest(unittest.TestCase):
         self.assertEqual((status, ctype), (200, "text/html; charset=utf-8"))
         self.assertIn(b'href="/style.css"', body)
         self.assertIn(b'src="/app.js"', body)
-        for path, want in (("/app.js", "text/javascript; charset=utf-8"), ("/style.css", "text/css; charset=utf-8")):
+        for path, want in (
+            ("/app.js", "text/javascript; charset=utf-8"),
+            ("/style.css", "text/css; charset=utf-8"),
+        ):
             status, ctype, body = self.request("GET", path)
             self.assertEqual((status, ctype), (200, want))
             self.assertTrue(body)
@@ -43,8 +46,13 @@ class ServerTest(unittest.TestCase):
     def test_blocks_foreign_host_and_origin(self):
         self.assertEqual(self.request("GET", "/", {"Host": "evil.example"})[0], 403)
         host = f"127.0.0.1:{self.srv.server_address[1]}"
-        self.assertEqual(self.request("POST", "/api/cancel", {"Host": host, "Origin": "http://evil.example"})[0], 403)
-        self.assertEqual(self.request("POST", "/api/cancel", {"Host": host, "Origin": f"http://{host}"})[0], 200)
+        self.assertEqual(
+            self.request("POST", "/api/cancel", {"Host": host, "Origin": "http://evil.example"})[0],
+            403,
+        )
+        self.assertEqual(
+            self.request("POST", "/api/cancel", {"Host": host, "Origin": f"http://{host}"})[0], 200
+        )
 
 
 if __name__ == "__main__":
