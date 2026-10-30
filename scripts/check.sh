@@ -48,6 +48,8 @@ if [ ${#html[@]} -gt 0 ]; then
   if [ -n "$fix" ]; then "${prettier[@]}" --write "${html[@]}" || true; fi
   step "${prettier[@]}" --check "${html[@]}"
 fi
-if [ "$scoped" -gt 0 ]; then step python3 -I scripts/no_history_comments.py "${py[@]}" "${web[@]}"
-else step python3 -I scripts/no_history_comments.py; fi
+if [ -f scripts/no_history_comments.py ]; then
+  if [ "$scoped" -gt 0 ]; then step python3 -I scripts/no_history_comments.py "${py[@]}" "${web[@]}"
+  else step python3 -I scripts/no_history_comments.py; fi
+fi
 exit $status

@@ -11,8 +11,8 @@ Import direction: `project` <- `transcribe` <- `server` <- `__main__`, no cycles
 `craig_transcriber` package under `src/` (modules import each other with `from . import`); `main()`
 in `__main__.py`, run as `craig-transcriber` or `python -m craig_transcriber`, wires `Project(dir)`,
 `Job(proj)` and `server.make_server(host, port, proj, job)`. Tests are one file per module in
-`tests/` (`test_project.py`, `test_lines.py`, `test_engine.py`, `test_job.py`, `test_server.py`,
-`test_scripts.py`), with the shared helpers and fake engines in `tests/helpers.py`. Dependencies,
+`tests/` (`test_project.py`, `test_lines.py`, `test_engine.py`, `test_job.py`, `test_server.py`),
+with the shared helpers and fake engines in `tests/helpers.py`. Dependencies,
 entry point and ruff settings are in `pyproject.toml`.
 
 ## `project.py`

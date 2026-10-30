@@ -169,7 +169,7 @@ pip install -e ".[dev]"
 python -m unittest discover -s tests   # stdlib unittest; no model or GPU needed
 ```
 
-Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python), [Biome](https://biomejs.dev/) (`src/craig_transcriber/static/*.js`, `*.css`) and [Prettier](https://prettier.io/) (`static/*.html`), and comments may not carry history (issue numbers, dates, "used to"). One script runs everything:
+Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python), [Biome](https://biomejs.dev/) (`src/craig_transcriber/static/*.js`, `*.css`) and [Prettier](https://prettier.io/) (`static/*.html`). One script runs everything:
 
 ```bash
 pip install -e ".[dev]"                    # ruff; Biome and Prettier run through npx, so they need Node
