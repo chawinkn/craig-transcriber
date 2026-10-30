@@ -1,5 +1,45 @@
 # craig-transcriber
 
+## 0.5.1
+
+### Patch Changes
+
+- [#38](https://github.com/chawinkn/craig-transcriber/pull/38) [`95719ce`](https://github.com/chawinkn/craig-transcriber/commit/95719ce9c2460ace519cc413ac0be0039de9de52) Thanks [@chawinkn](https://github.com/chawinkn)! - A Line is judged by the current rules every time it is shown, so a rule change reaches Lines from older runs too. The "looks made up" tag that old runs left on correct Lines (for example "กี่หน้ากี่หน้ากี่หน้า" or "ขอบคุณครับ" in 0.1 s) is gone.
+
+## 0.5.0
+
+### Minor Changes
+
+- [#37](https://github.com/chawinkn/craig-transcriber/pull/37) [`e9f1122`](https://github.com/chawinkn/craig-transcriber/commit/e9f1122b77f98723035eac93ba797bd96e902d5b) Thanks [@chawinkn](https://github.com/chawinkn)! - Each run also records where there is voice, and stretches of 2 s or more with voice but no Line show as **Missed speech** rows between the Lines, with ▶, in "worth a second look" and reached by `Alt+↓` ([#33](https://github.com/chawinkn/craig-transcriber/issues/33)).
+
+- [#37](https://github.com/chawinkn/craig-transcriber/pull/37) [`8579daf`](https://github.com/chawinkn/craig-transcriber/commit/8579daf52083366010cebb0f510dc3226f0433d9) Thanks [@chawinkn](https://github.com/chawinkn)! - "Transcribe this part again" on a Missed speech row or a "missed speech" Line re-runs only that stretch with the step 2 settings and replaces only the Lines inside it; every other Line, tick and edit stays ([#36](https://github.com/chawinkn/craig-transcriber/issues/36)).
+
+### Patch Changes
+
+- [#37](https://github.com/chawinkn/craig-transcriber/pull/37) [`71b34a0`](https://github.com/chawinkn/craig-transcriber/commit/71b34a006147173dffe509f72933fea8150a32a6) Thanks [@chawinkn](https://github.com/chawinkn)! - A Line of 4 s or more with under 2 characters per second is tagged unsure with the reason "missed speech": the model swallowed what was said there ([#32](https://github.com/chawinkn/craig-transcriber/issues/32)).
+
+- [#37](https://github.com/chawinkn/craig-transcriber/pull/37) [`cdde2cd`](https://github.com/chawinkn/craig-transcriber/commit/cdde2cd8b44471ca3e0be7b0d7d312e4d4df999d) Thanks [@chawinkn](https://github.com/chawinkn)! - A Missed speech row can be dismissed (it stays hidden until the next full run) or filled with "+ add line here" ([#34](https://github.com/chawinkn/craig-transcriber/issues/34)).
+
+- [#37](https://github.com/chawinkn/craig-transcriber/pull/37) [`469646e`](https://github.com/chawinkn/craig-transcriber/commit/469646e1ff439252d47557902f494f4ddab35c9c) Thanks [@chawinkn](https://github.com/chawinkn)! - "Check for missed speech" finds Missed speech in projects transcribed before voice was recorded, without touching any Line, tick or edit ([#35](https://github.com/chawinkn/craig-transcriber/issues/35), [#23](https://github.com/chawinkn/craig-transcriber/issues/23)).
+
+## 0.4.0
+
+### Minor Changes
+
+- [#30](https://github.com/chawinkn/craig-transcriber/pull/30) [`8ca7bbe`](https://github.com/chawinkn/craig-transcriber/commit/8ca7bbea767140eea4fb4b2bd517c83c0d758505) Thanks [@chawinkn](https://github.com/chawinkn)! - Words the model was not confident about (**Unsure words**) are underlined in the Line's text, and a Line with one is tagged unsure ([#26](https://github.com/chawinkn/craig-transcriber/issues/26)).
+
+- [#30](https://github.com/chawinkn/craig-transcriber/pull/30) [`580cdcc`](https://github.com/chawinkn/craig-transcriber/commit/580cdcc70400c731160593fd5f1771d25289ecba) Thanks [@chawinkn](https://github.com/chawinkn)! - The unsure tag says why: "unsure word: ดองครีม", "repeated phrase", "foreign letters" or "timing". Editing a Line's text clears the tag, its reasons and its underlines ([#28](https://github.com/chawinkn/craig-transcriber/issues/28)).
+
+- [#30](https://github.com/chawinkn/craig-transcriber/pull/30) [`0b8ca18`](https://github.com/chawinkn/craig-transcriber/commit/0b8ca1837e5967922bf09517725eeda6ab29603f) Thanks [@chawinkn](https://github.com/chawinkn)! - "Worth a second look" lists unsure Lines not yet reviewed, Thai/English Lines get their own filter, and `Alt+↓` jumps to the next unsure Line ([#27](https://github.com/chawinkn/craig-transcriber/issues/27)).
+
+### Patch Changes
+
+- [#31](https://github.com/chawinkn/craig-transcriber/pull/31) [`1d1cd66`](https://github.com/chawinkn/craig-transcriber/commit/1d1cd66fc7acfef1c05c488120d732ef6ce66e6f) Thanks [@chawinkn](https://github.com/chawinkn)! - The Unsure word cutoff is 0.3, set from 219 reviewed Lines of a Thai meeting: it tags 12% of Lines and catches 6 of 17 wrong ones, where the old tag caught none. The Line-level confidence rule, which caught nothing extra, is removed ([#29](https://github.com/chawinkn/craig-transcriber/issues/29), [#24](https://github.com/chawinkn/craig-transcriber/issues/24), [#22](https://github.com/chawinkn/craig-transcriber/issues/22)).
+
+- [#30](https://github.com/chawinkn/craig-transcriber/pull/30) [`e7e7be8`](https://github.com/chawinkn/craig-transcriber/commit/e7e7be84afc650091864fba4b50ac31c9d00b72d) Thanks [@chawinkn](https://github.com/chawinkn)! - Real repetition ("กี่หน้ากี่หน้ากี่หน้า") and short Lines with odd timing ("ขอบคุณครับ" in 0.1 s) are no longer tagged as made up: a phrase must repeat 4 times, and the too-fast check needs 20+ characters ([#25](https://github.com/chawinkn/craig-transcriber/issues/25)).
+
+- [#30](https://github.com/chawinkn/craig-transcriber/pull/30) [`dac9991`](https://github.com/chawinkn/craig-transcriber/commit/dac99910b88a1884942db170270de7a5c317032c) Thanks [@chawinkn](https://github.com/chawinkn)! - Thai word pieces that touch are underlined and named as one Unsure word ("ดองครีม", not "ดอง, ครีม").
+
 ## 0.3.1
 
 ### Patch Changes
