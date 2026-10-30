@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Craig Transcriber: run `python main.py`, see README.md."""
+
 import argparse
 import os
 import sys

@@ -168,6 +168,17 @@ docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v craig_data:/data -v 
 python3 test_app.py   # stdlib unittest; no model or GPU needed
 ```
 
+Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python) and [Biome](https://biomejs.dev/) (`static/*.js`, `static/*.css`), and comments may not carry history (issue numbers, dates, "used to"). One script runs everything:
+
+```bash
+pip install -r requirements-dev.txt        # ruff; Biome runs through npx, so it needs Node
+bash scripts/check.sh                      # check the whole repo, as CI does
+bash scripts/check.sh --fix [files...]     # format and fix the files (all if none), then check them
+git config core.hooksPath .githooks        # run the fix on staged files before every commit
+```
+
+The pre-commit hook re-stages the files it formats and aborts the commit if a check still fails. CI (GitHub Actions, Python 3.9 and 3.12) runs `scripts/check.sh` and `test_app.py` on every push to `main` and every pull request.
+
 | File | Role |
 |---|---|
 | `main.py` | Entry point: parses arguments, wires everything together, starts the server |

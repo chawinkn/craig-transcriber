@@ -9,9 +9,18 @@ import zipfile
 from pathlib import Path
 
 AUDIO_EXT = {".flac", ".wav", ".mp3", ".ogg", ".oga", ".opus", ".m4a", ".aac", ".webm", ".mp4"}
-MIME = {".flac": "audio/flac", ".wav": "audio/wav", ".mp3": "audio/mpeg", ".ogg": "audio/ogg",
-        ".oga": "audio/ogg", ".opus": "audio/ogg", ".m4a": "audio/mp4", ".aac": "audio/aac",
-        ".webm": "audio/webm", ".mp4": "audio/mp4"}
+MIME = {
+    ".flac": "audio/flac",
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".webm": "audio/webm",
+    ".mp4": "audio/mp4",
+}
 
 
 def hms(t):
@@ -38,7 +47,7 @@ def unsure_spans(text, words):
             continue
         pos = i + len(piece)
         if w["prob"] < UNSURE_WORD_PROB:
-            if spans and spans[-1][1] == i:     # Thai word pieces touch: show them as one word
+            if spans and spans[-1][1] == i:  # Thai word pieces touch: show them as one word
                 spans[-1][1] = pos
             else:
                 spans.append([i, pos])
@@ -55,9 +64,11 @@ def repeats(text):
 
 
 def foreign_letters(text):
-    """Letters that are neither Thai nor Latin. Latin: Basic through Extended-B (U+024F) plus Extended Additional (U+1E00-1EFF, Vietnamese)."""
-    return any(ch.isalpha() and not ("\u0e00" <= ch <= "\u0e7f" or ch <= "\u024f" or "\u1e00" <= ch <= "\u1eff")
-               for ch in text)
+    """Letters that are neither Thai nor Latin. Latin: Basic through Extended-B (U+024F) plus Extended Additional
+    (U+1E00-1EFF, Vietnamese)."""
+    return any(
+        ch.isalpha() and not ("\u0e00" <= ch <= "\u0e7f" or ch <= "\u024f" or "\u1e00" <= ch <= "\u1eff") for ch in text
+    )
 
 
 def too_fast(text, start, end):
@@ -83,12 +94,24 @@ def review_flags(line):
         if spans:
             reasons.append("unsure word")
         start, end = line.get("start", 0), line.get("end", 0)
-        reasons += [r for hit, r in [(repeats(text), "repeated phrase"), (foreign_letters(text), "foreign letters"),
-                                     (too_fast(text, start, end), "timing")] if hit]
+        reasons += [
+            r
+            for hit, r in [
+                (repeats(text), "repeated phrase"),
+                (foreign_letters(text), "foreign letters"),
+                (too_fast(text, start, end), "timing"),
+            ]
+            if hit
+        ]
         if text.strip() and too_slow(text, start, end):
             reasons.append("missed speech")
-    return {"edited": edited, "unsure_words": spans, "reasons": reasons, "unsure": bool(reasons),
-            "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2}
+    return {
+        "edited": edited,
+        "unsure_words": spans,
+        "reasons": reasons,
+        "unsure": bool(reasons),
+        "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2,
+    }
 
 
 MISSED_MIN_VOICE = 2.0  # seconds of voice with no Line over it that count as Missed speech
@@ -97,7 +120,11 @@ MISSED_MIN_VOICE = 2.0  # seconds of voice with no Line over it that count as Mi
 def missed_stretches(speech, spans):
     """Parts of the voice stretches [start, end] that no span covers, kept when MISSED_MIN_VOICE or longer."""
     out, spans = [], sorted(spans)
-    keep = lambda a, b: out.append({"start": round(a, 2), "end": round(b, 2)}) if round(b - a, 2) >= MISSED_MIN_VOICE else None
+
+    def keep(a, b):
+        if round(b - a, 2) >= MISSED_MIN_VOICE:
+            out.append({"start": round(a, 2), "end": round(b, 2)})
+
     for start, end in speech:
         pos = start
         for s, e in spans:
@@ -113,13 +140,14 @@ def missed_stretches(speech, spans):
 
 def speaker_name_from(filename):
     stem = Path(filename).stem
-    return re.sub(r"^\d+[-_ ]+", "", stem) or stem          # Craig names files "1-name.flac"
+    return re.sub(r"^\d+[-_ ]+", "", stem) or stem  # Craig names files "1-name.flac"
 
 
 def probe_duration(path):
     """Length in seconds, or None when the file does not say (streamed FLAC from Craig often doesn't)."""
     try:
         import av
+
         with av.open(str(path)) as c:
             if c.duration:
                 return c.duration / 1_000_000
@@ -138,7 +166,11 @@ class Project:
         self._p = {"speakers": [], "lines": [], "seq": 0}
         try:
             d = json.loads((self.dir / "project.json").read_text(encoding="utf-8"))
-            self._p["speakers"], self._p["lines"], self._p["seq"] = d["speakers"], d["lines"], d.get("seq", len(d["lines"]))
+            self._p["speakers"], self._p["lines"], self._p["seq"] = (
+                d["speakers"],
+                d["lines"],
+                d.get("seq", len(d["lines"])),
+            )
         except FileNotFoundError:
             pass
         except Exception as e:
@@ -159,25 +191,30 @@ class Project:
         return next((s for s in self._p["speakers"] if s["id"] == sid), None)
 
     def _line(self, line_id):
-        return next((l for l in self._p["lines"] if l["id"] == line_id), None)
+        return next((ln for ln in self._p["lines"] if ln["id"] == line_id), None)
 
     def _sorted_lines(self):
         order = {s["id"]: i for i, s in enumerate(self._p["speakers"])}
-        return sorted(self._p["lines"], key=lambda l: (l["start"], order.get(l["spk"], 0)))
+        return sorted(self._p["lines"], key=lambda ln: (ln["start"], order.get(ln["spk"], 0)))
 
     def state(self):
         """Each Line carries its review flags; a Speaker is "touched" when a Line of theirs was reviewed,
         edited or deleted since the model wrote it, and has its Missed speech stretches."""
         with self._lock:
             st = copy.deepcopy({"speakers": self._p["speakers"], "lines": self._sorted_lines()})
-        for l in st["lines"]:
-            l.update(review_flags(l))
-        touched = {l["spk"] for l in st["lines"] if l["ok"] or l["edited"]}
+        for ln in st["lines"]:
+            ln.update(review_flags(ln))
+        touched = {ln["spk"] for ln in st["lines"] if ln["ok"] or ln["edited"]}
         for sp in st["speakers"]:
             sp["touched"] = sp["id"] in touched or bool(sp.pop("deleted_by_hand", False))
             gone = sp.get("dismissed") or []
-            sp["missed"] = [m for m in missed_stretches(sp.get("speech") or [], [(l["start"], l["end"]) for l in st["lines"] if l["spk"] == sp["id"]])
-                            if not any(a <= (m["start"] + m["end"]) / 2 <= b for a, b in gone)]
+            sp["missed"] = [
+                m
+                for m in missed_stretches(
+                    sp.get("speech") or [], [(ln["start"], ln["end"]) for ln in st["lines"] if ln["spk"] == sp["id"]]
+                )
+                if not any(a <= (m["start"] + m["end"]) / 2 <= b for a, b in gone)
+            ]
         return st
 
     def speaker(self, sid):
@@ -196,13 +233,26 @@ class Project:
             L = copy.deepcopy(self._sorted_lines())
             names = {s["id"]: s["name"] for s in self._p["speakers"]}
         if kind == "txt":
-            return "\n".join(f"[{hms(l['start'])}] {names.get(l['spk'], '?')}: {l['text']}" for l in L) + "\n", "text/plain"
+            return "\n".join(
+                f"[{hms(ln['start'])}] {names.get(ln['spk'], '?')}: {ln['text']}" for ln in L
+            ) + "\n", "text/plain"
         if kind == "srt":
-            out = [f"{i}\n{srt_time(l['start'])} --> {srt_time(max(l['end'], l['start'] + 0.3))}\n{names.get(l['spk'], '?')}: {l['text']}\n"
-                   for i, l in enumerate(L, 1)]
+            out = [
+                f"{i}\n{srt_time(ln['start'])} --> {srt_time(max(ln['end'], ln['start'] + 0.3))}\n"
+                f"{names.get(ln['spk'], '?')}: {ln['text']}\n"
+                for i, ln in enumerate(L, 1)
+            ]
             return "\n".join(out), "text/plain"
-        data = [{"speaker": names.get(l["spk"], "?"), "start": l["start"], "end": l["end"], "text": l["text"],
-                 "reviewed": l["ok"]} for l in L]
+        data = [
+            {
+                "speaker": names.get(ln["spk"], "?"),
+                "start": ln["start"],
+                "end": ln["end"],
+                "text": ln["text"],
+                "reviewed": ln["ok"],
+            }
+            for ln in L
+        ]
         return json.dumps(data, ensure_ascii=False, indent=1), "application/json"
 
     def add_upload(self, fileobj, length, name):
@@ -233,17 +283,23 @@ class Project:
             os.replace(tmp, dest)
             return [self._register(sid, dest, name)]
         except zipfile.BadZipFile:
-            raise ValueError(f"{name} is not a valid .zip file")
+            raise ValueError(f"{name} is not a valid .zip file") from None
         finally:
             tmp.unlink(missing_ok=True)
 
     def _add_zip(self, zip_path):
         added = []
         with zipfile.ZipFile(zip_path) as z:
-            members = sorted((m for m in z.infolist() if not m.is_dir()
-                              and Path(m.filename).suffix.lower() in AUDIO_EXT
-                              and not Path(m.filename).name.startswith(".")),
-                             key=lambda m: m.filename)
+            members = sorted(
+                (
+                    m
+                    for m in z.infolist()
+                    if not m.is_dir()
+                    and Path(m.filename).suffix.lower() in AUDIO_EXT
+                    and not Path(m.filename).name.startswith(".")
+                ),
+                key=lambda m: m.filename,
+            )
             for m in members:
                 with self._lock:
                     sid = self._new_id("s")
@@ -260,25 +316,33 @@ class Project:
             taken, n = {s["name"] for s in self._p["speakers"]}, 2
             while name in taken:
                 name, n = f"{base} ({n})", n + 1
-            self._p["speakers"].append({"id": sid, "name": name, "file": dest.name, "ext": dest.suffix.lower(),
-                                        "duration": duration, "source": original_name})
+            self._p["speakers"].append(
+                {
+                    "id": sid,
+                    "name": name,
+                    "file": dest.name,
+                    "ext": dest.suffix.lower(),
+                    "duration": duration,
+                    "source": original_name,
+                }
+            )
             self._save()
         return name
 
     def edit_lines(self, updates):
         with self._lock:
-            by = {l["id"]: l for l in self._p["lines"]}
+            by = {ln["id"]: ln for ln in self._p["lines"]}
             for u in updates:
-                l = by.get(u.get("id"))
-                if not l:
+                ln = by.get(u.get("id"))
+                if not ln:
                     continue
                 if isinstance(u.get("text"), str):
-                    l["text"] = u["text"]
+                    ln["text"] = u["text"]
                 if isinstance(u.get("ok"), bool):
-                    l["ok"] = u["ok"]
+                    ln["ok"] = u["ok"]
                 for k in ("start", "end"):
                     if isinstance(u.get(k), (int, float)) and u[k] >= 0:
-                        l[k] = round(float(u[k]), 2)
+                        ln[k] = round(float(u[k]), 2)
             self._save()
 
     def add_line_after(self, line_id):
@@ -286,8 +350,16 @@ class Project:
             after = self._line(line_id)
             if not after:
                 return None
-            line = {"id": self._new_id("l"), "spk": after["spk"], "start": after["end"],
-                    "end": round(after["end"] + 2, 2), "text": "", "orig": "", "conf": None, "ok": False}
+            line = {
+                "id": self._new_id("l"),
+                "spk": after["spk"],
+                "start": after["end"],
+                "end": round(after["end"] + 2, 2),
+                "text": "",
+                "orig": "",
+                "conf": None,
+                "ok": False,
+            }
             self._p["lines"].append(line)
             self._save()
             return dict(line)
@@ -297,8 +369,16 @@ class Project:
             nums = all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (start, end))
             if not self._speaker(sid) or not nums or not 0 <= start < end:
                 return None
-            line = {"id": self._new_id("l"), "spk": sid, "start": round(float(start), 2),
-                    "end": round(float(end), 2), "text": "", "orig": "", "conf": None, "ok": False}
+            line = {
+                "id": self._new_id("l"),
+                "spk": sid,
+                "start": round(float(start), 2),
+                "end": round(float(end), 2),
+                "text": "",
+                "orig": "",
+                "conf": None,
+                "ok": False,
+            }
             self._p["lines"].append(line)
             self._save()
             return dict(line)
@@ -319,7 +399,7 @@ class Project:
             sp = self._speaker(line["spk"])
             if sp and line.get("orig"):
                 sp["deleted_by_hand"] = True
-            if sp and not any(l["spk"] == sp["id"] for l in self._p["lines"]):
+            if sp and not any(ln["spk"] == sp["id"] for ln in self._p["lines"]):
                 sp.pop("run", None)
             self._save()
 
@@ -336,7 +416,7 @@ class Project:
             if not sp:
                 return
             self._p["speakers"] = [s for s in self._p["speakers"] if s["id"] != sid]
-            self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid]
+            self._p["lines"] = [ln for ln in self._p["lines"] if ln["spk"] != sid]
             self._save()
         (self.dir / "audio" / sp["file"]).unlink(missing_ok=True)
 
@@ -353,29 +433,40 @@ class Project:
                 sp["speech"] = speech
             sp.pop("deleted_by_hand", None)
             sp.pop("dismissed", None)
-            self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid]
+            self._p["lines"] = [ln for ln in self._p["lines"] if ln["spk"] != sid]
             self._add_lines(sid, segments)
             self._save()
 
     def replace_stretch(self, sid, start, end, segments):
         """Swap this Speaker's Lines whose midpoint is in [start, end] for the new ones whose midpoint is too;
         everything else, and the Speaker's run, speech and dismissed stretches, stays."""
-        inside = lambda l: start <= (l["start"] + l["end"]) / 2 <= end
+
+        def inside(ln):
+            return start <= (ln["start"] + ln["end"]) / 2 <= end
+
         with self._lock:
             if not self._speaker(sid):
                 return
-            self._p["lines"] = [l for l in self._p["lines"] if l["spk"] != sid or not inside(l)]
+            self._p["lines"] = [ln for ln in self._p["lines"] if ln["spk"] != sid or not inside(ln)]
             self._add_lines(sid, [s for s in segments if inside(s)])
             self._save()
 
     def _add_lines(self, sid, segments):
         for s in segments:
             conf = s.get("conf")
-            self._p["lines"].append({"id": self._new_id("l"), "spk": sid, "start": round(float(s["start"]), 2),
-                                     "end": round(float(s["end"]), 2), "text": s["text"], "orig": s["text"],
-                                     "conf": None if conf is None else round(float(conf), 3), "ok": False,
-                                     "words": [{"text": x["text"], "prob": round(float(x["prob"]), 3)}
-                                               for x in s.get("words") or []]})
+            self._p["lines"].append(
+                {
+                    "id": self._new_id("l"),
+                    "spk": sid,
+                    "start": round(float(s["start"]), 2),
+                    "end": round(float(s["end"]), 2),
+                    "text": s["text"],
+                    "orig": s["text"],
+                    "conf": None if conf is None else round(float(conf), 3),
+                    "ok": False,
+                    "words": [{"text": x["text"], "prob": round(float(x["prob"]), 3)} for x in s.get("words") or []],
+                }
+            )
 
     def set_speech(self, sid, speech):
         with self._lock:
