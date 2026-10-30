@@ -85,8 +85,12 @@ class Handler(BaseHTTPRequestHandler):
                 name, ctype = STATIC[u.path]
                 return self.send_bytes(200, (Path(__file__).parent / "static" / name).read_bytes(), ctype)
             if u.path == "/api/state":
-                env = {"engine": self.job.engine_cls.available(), "cuda": transcribe.cuda_count(), "py": sys.version.split()[0],
-                       "models": transcribe.model_catalog(self.project.dir)}
+                env = {
+                    "engine": self.job.engine_cls.available(),
+                    "cuda": transcribe.cuda_count(),
+                    "py": sys.version.split()[0],
+                    "models": transcribe.model_catalog(self.project.dir),
+                }
                 return self.send_json({**self.project.state(), "env": env})
             if u.path == "/api/status":
                 return self.send_json(self.job.status())
@@ -95,8 +99,12 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/export\.(txt|srt|json)", u.path)
             if m:
                 body, ctype = self.project.export(m.group(1))
-                return self.send_bytes(200, body.encode("utf-8"), ctype + "; charset=utf-8",
-                                       {"Content-Disposition": f'attachment; filename="transcript.{m.group(1)}"'})
+                return self.send_bytes(
+                    200,
+                    body.encode("utf-8"),
+                    ctype + "; charset=utf-8",
+                    {"Content-Disposition": f'attachment; filename="transcript.{m.group(1)}"'},
+                )
             self.send_bytes(404, b"Not found", "text/plain")
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
