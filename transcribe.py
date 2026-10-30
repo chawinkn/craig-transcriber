@@ -79,10 +79,6 @@ def model_catalog(data_dir):
     return out
 
 
-def looks_hallucinated(text):
-    return project.repeats(text) or project.foreign_letters(text)
-
-
 # No hallucination_silence_threshold: on noisy Thai audio it dropped ~70% of real speech (#4).
 # PONYTAIL: no_repeat_ngram_size=10 measured on two one-minute clips only; retune with more recordings.
 DECODE = dict(beam_size=5, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500),
@@ -145,8 +141,7 @@ def _spans(words):
 
 
 def _line(start, end, text, conf, words):
-    return {"start": start, "end": end, "text": text, "conf": conf, "suspect": project.too_fast(text, start, end) or looks_hallucinated(text),
-            "words": [{"text": w["text"], "prob": w["prob"]} for w in words]}
+    return {"start": start, "end": end, "text": text, "conf": conf, "words": [{"text": w["text"], "prob": w["prob"]} for w in words]}
 
 
 def _join_fragments(lines):
@@ -181,7 +176,7 @@ def _merged(parts):
 
 
 def lines_from_segments(segments):
-    """Yield Lines from engine segments: drop silence and empty text, split long segments at pauses, flag suspects."""
+    """Yield Lines from engine segments: drop silence and empty text, split long segments at pauses."""
     return _join_fragments(_split_segments(segments))
 
 
