@@ -86,7 +86,11 @@ class JobTest(unittest.TestCase):
 
     def stretch_setup(self):
         self.p.replace_lines(
-            self.sid, [seg(0, "a"), seg(5, "b"), seg(10, "c"), seg(20, "d")], 30.0, {"model": "old"}, [[0.0, 25.0]]
+            self.sid,
+            [seg(0, "a"), seg(5, "b"), seg(10, "c"), seg(20, "d")],
+            30.0,
+            {"model": "old"},
+            [[0.0, 25.0]],
         )
         by = {ln["text"]: ln["id"] for ln in self.p.state()["lines"]}
         self.p.edit_lines([{"id": by["c"], "text": "c fixed"}, {"id": by["b"], "ok": True}])
@@ -97,7 +101,8 @@ class JobTest(unittest.TestCase):
         job = Job(self.p, engine_cls)
         FakeEngine.job = job
         self.assertEqual(
-            job.start({"speakers": [self.sid], "start": start, "end": end, "model": "m", **opts}), {"ok": True}
+            job.start({"speakers": [self.sid], "start": start, "end": end, "model": "m", **opts}),
+            {"ok": True},
         )
         job._thread.join(10)
         return job
@@ -107,7 +112,12 @@ class JobTest(unittest.TestCase):
         asked = []
 
         class Clipped(FakeEngine):
-            segments = [seg(8.0, "outside here"), seg(9.5, "new one"), seg(10.5, "new two"), seg(12.0, "after here")]
+            segments = [
+                seg(8.0, "outside here"),
+                seg(9.5, "new one"),
+                seg(10.5, "new two"),
+                seg(12.0, "after here"),
+            ]
             speech = [[99.0, 100.0]]
 
             def transcribe(self, path, language, prompt, clip=None):
@@ -120,19 +130,29 @@ class JobTest(unittest.TestCase):
 
         job = self.stretch_job(Clipped, language="th", prompt="ขนุน")
         st = job.status()
-        self.assertEqual((st["phase"], asked, st["dur"], st["pos"]), ("done", [(9.0, 12.0)], 3.0, 3.0))
+        self.assertEqual(
+            (st["phase"], asked, st["dur"], st["pos"]), ("done", [(9.0, 12.0)], 3.0, 3.0)
+        )
         after = Project(self.p.dir).state()
-        self.assertEqual([ln["text"] for ln in after["lines"]], ["a", "b", "new one", "new two", "d"])
+        self.assertEqual(
+            [ln["text"] for ln in after["lines"]], ["a", "b", "new one", "new two", "d"]
+        )
 
         def keep(s):
             return [ln for ln in s["lines"] if ln["text"] in ("a", "b", "d")]
 
         self.assertEqual(keep(after), keep(self.before))
         self.assertTrue(
-            all(not ln["ok"] and not ln["edited"] for ln in after["lines"] if ln["text"] in ("new one", "new two"))
+            all(
+                not ln["ok"] and not ln["edited"]
+                for ln in after["lines"]
+                if ln["text"] in ("new one", "new two")
+            )
         )
         sp = self.p.speaker(self.sid)
-        self.assertEqual((sp["run"], sp["speech"], sp["duration"]), ({"model": "old"}, [[0.0, 25.0]], 30.0))
+        self.assertEqual(
+            (sp["run"], sp["speech"], sp["duration"]), ({"model": "old"}, [[0.0, 25.0]], 30.0)
+        )
 
     def test_failed_cancelled_or_crashed_stretch_run_changes_nothing(self):
         self.stretch_setup()
@@ -168,8 +188,12 @@ class JobTest(unittest.TestCase):
 
     def test_stretch_run_goes_through_the_child_process(self):
         self.stretch_setup()
-        self.assertEqual(self.stretch_job(IsolatedEngine, model="clip", device="cpu").status()["phase"], "done")
-        self.assertEqual([ln["text"] for ln in self.p.state()["lines"]], ["a", "b", "clip (9.0, 12.0)", "d"])
+        self.assertEqual(
+            self.stretch_job(IsolatedEngine, model="clip", device="cpu").status()["phase"], "done"
+        )
+        self.assertEqual(
+            [ln["text"] for ln in self.p.state()["lines"]], ["a", "b", "clip (9.0, 12.0)", "d"]
+        )
 
     def test_stretch_needs_exactly_one_person_and_a_real_range(self):
         upload(self.p, "2-b.wav", wav())
@@ -191,12 +215,16 @@ class JobTest(unittest.TestCase):
     def check_job(self, engine_cls, ids=None, **opts):
         job = Job(self.p, engine_cls)
         FakeEngine.job = job
-        self.assertEqual(job.start({"speakers": ids or [self.sid], "check": True, **opts}), {"ok": True})
+        self.assertEqual(
+            job.start({"speakers": ids or [self.sid], "check": True, **opts}), {"ok": True}
+        )
         job._thread.join(10)
         return job
 
     def test_check_saves_the_voice_and_leaves_lines_ticks_and_edits_alone(self):
-        self.p.replace_lines(self.sid, [seg(0, "old"), seg(5, "later")], run={"model": "m", "at": 1.0})
+        self.p.replace_lines(
+            self.sid, [seg(0, "old"), seg(5, "later")], run={"model": "m", "at": 1.0}
+        )
         first = self.p.state()["lines"][0]["id"]
         self.p.edit_lines([{"id": first, "text": "fixed", "ok": True}])
         before = self.p.state()
@@ -211,7 +239,10 @@ class JobTest(unittest.TestCase):
         self.assertEqual(after["lines"], before["lines"])
 
         def strip(state):
-            return [{k: v for k, v in s.items() if k not in ("speech", "missed")} for s in state["speakers"]]
+            return [
+                {k: v for k, v in s.items() if k not in ("speech", "missed")}
+                for s in state["speakers"]
+            ]
 
         self.assertEqual(strip(after), strip(before))
         self.assertEqual(after["speakers"][0]["speech"], [[0.0, 3.5]])
@@ -268,7 +299,8 @@ class JobTest(unittest.TestCase):
         job = Job(self.p, IsolatedEngine)
         for model, want in (("crash-in-voice", "error"), ("m", "done")):
             self.assertEqual(
-                job.start({"speakers": [self.sid], "check": True, "model": model, "device": "cpu"}), {"ok": True}
+                job.start({"speakers": [self.sid], "check": True, "model": model, "device": "cpu"}),
+                {"ok": True},
             )
             job._thread.join(10)
             self.assertEqual(job.status()["phase"], want, job.status().get("error"))
@@ -329,7 +361,11 @@ class JobTest(unittest.TestCase):
         lines = Project(self.p.dir).state()["lines"]
         self.assertEqual(
             [(ln["text"], ln["reasons"]) for ln in lines],
-            [("สวัสดี", []), ("อีเขียบ อีเขียบ อีเขียบ อีเขียบ", ["repeated phrase"]), ("además habíaон", ["foreign letters"])],
+            [
+                ("สวัสดี", []),
+                ("อีเขียบ อีเขียบ อีเขียบ อีเขียบ", ["repeated phrase"]),
+                ("además habíaон", ["foreign letters"]),
+            ],
         )
 
     def test_failed_or_cancelled_run_keeps_previous_record(self):
@@ -406,7 +442,10 @@ class JobTest(unittest.TestCase):
     def test_after_a_crash_the_next_run_gets_a_fresh_engine(self):
         job = Job(self.p, IsolatedEngine)
         for want in ("error", "done"):
-            self.assertEqual(job.start({"speakers": [self.sid], "model": "crash-once", "device": "cpu"}), {"ok": True})
+            self.assertEqual(
+                job.start({"speakers": [self.sid], "model": "crash-once", "device": "cpu"}),
+                {"ok": True},
+            )
             job._thread.join(10)
             self.assertEqual(job.status()["phase"], want, job.status().get("error"))
         self.assertTrue(all(t.startswith("cpu ") for _, t in texts(self.p)))
@@ -414,7 +453,9 @@ class JobTest(unittest.TestCase):
     def test_cancel_with_the_child_process_keeps_old_lines_and_the_engine_usable(self):
         job = Job(self.p, IsolatedEngine)
         for cancel in (True, False):
-            self.assertEqual(job.start({"speakers": [self.sid], "model": "slow", "device": "cpu"}), {"ok": True})
+            self.assertEqual(
+                job.start({"speakers": [self.sid], "model": "slow", "device": "cpu"}), {"ok": True}
+            )
             while cancel and not job.status().get("recent"):
                 time.sleep(0.02)
             if cancel:
@@ -433,8 +474,13 @@ class JobTest(unittest.TestCase):
         class Missing(FakeEngine):
             available = staticmethod(lambda: False)
 
-        self.assertIn("not installed", Job(self.p, Missing).start({"speakers": [self.sid]})["error"])
-        self.assertEqual(Job(self.p, FakeEngine).start({"speakers": ["nope"]}), {"error": "Choose at least one person"})
+        self.assertIn(
+            "not installed", Job(self.p, Missing).start({"speakers": [self.sid]})["error"]
+        )
+        self.assertEqual(
+            Job(self.p, FakeEngine).start({"speakers": ["nope"]}),
+            {"error": "Choose at least one person"},
+        )
         self.assertEqual(Job(self.p, FakeEngine).status(), {})
 
     def test_thai_model_must_be_installed(self):

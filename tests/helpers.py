@@ -29,14 +29,19 @@ def seg(start, text, conf=-0.3, no_speech=0.0):
 
 
 class ChildEngine:
-    """Runs inside the child process of ProcessEngine; some model names crash it the way a CUDA abort does."""
+    """Runs inside the child process of ProcessEngine; some model names crash it the way a CUDA
+    abort does."""
 
     available = staticmethod(lambda: True)
 
     def __init__(self, model_name, prefer_cpu, on_status):
         if model_name == "crash-on-load" and not prefer_cpu:
             os._exit(134)
-        self.model_name, self.device, self.language = model_name, "cpu" if prefer_cpu else "cuda", ""
+        self.model_name, self.device, self.language = (
+            model_name,
+            "cpu" if prefer_cpu else "cuda",
+            "",
+        )
         on_status(message=f"loaded on {self.device}")
 
     def transcribe(self, path, language, prompt, clip=None):
@@ -72,7 +77,12 @@ class IsolatedEngine(ProcessEngine):
 
 
 class FakeEngine:
-    segments = [seg(0, " hello "), seg(1, ""), seg(2, "noise", conf=-1.5, no_speech=0.9), seg(3, "world")]
+    segments = [
+        seg(0, " hello "),
+        seg(1, ""),
+        seg(2, "noise", conf=-1.5, no_speech=0.9),
+        seg(3, "world"),
+    ]
     speech = [[0.0, 3.5]]
     job = None
 

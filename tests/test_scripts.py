@@ -17,9 +17,16 @@ class HistoryCommentsTest(unittest.TestCase):
         return list(no_history_comments.find([str(path)]))
 
     def test_flags_history_in_comments(self):
-        self.assertEqual(len(self.found("a.py", "x = 1  # fixed in #12\n# used to be slow\n# on 2026-10-29\n")), 3)
-        self.assertEqual(len(self.found("a.js", "f() // previously a loop\n/* the reviewer\nwanted it */\n")), 2)
-        self.assertEqual(len(self.found("a.css", "/* measured on a laptop */ a { color: red }\n")), 1)
+        self.assertEqual(
+            len(self.found("a.py", "x = 1  # fixed in #12\n# used to be slow\n# on 2026-10-29\n")),
+            3,
+        )
+        self.assertEqual(
+            len(self.found("a.js", "f() // previously a loop\n/* the reviewer\nwanted it */\n")), 2
+        )
+        self.assertEqual(
+            len(self.found("a.css", "/* measured on a laptop */ a { color: red }\n")), 1
+        )
 
     def test_ignores_code_strings_and_plain_comments(self):
         self.assertEqual(self.found("a.py", 'x = "used to #12 2026-10-29"  # noqa: E501\n'), [])
