@@ -1,5 +1,11 @@
 # craig-transcriber
 
+## 0.6.0
+
+### Minor Changes
+
+- [#40](https://github.com/chawinkn/craig-transcriber/pull/40) [`84c2206`](https://github.com/chawinkn/craig-transcriber/commit/84c22067b4904c4b9b82831e092451fe263d80f9) Thanks [@chawinkn](https://github.com/chawinkn)! - The app is now an installable package. Install it with `pip install .` (add `.[gpu]` for NVIDIA, `.[convert]` for converting Thai models), run it with `craig-transcriber` or `python -m craig_transcriber`, and convert a Thai model with `python -m craig_transcriber.convert_model pathumma`. `python main.py` and `python convert_model.py` no longer exist; the Docker image is used the same way as before.
+
 ## 0.5.1
 
 ### Patch Changes
