@@ -1,6 +1,0 @@
-line-length = 120
-target-version = "py39"
-extend-exclude = [".venv", "craig_work", ".claude"]
-
-[lint]
-select = ["E", "F", "I", "B"]

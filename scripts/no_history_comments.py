@@ -59,7 +59,10 @@ def find(paths):
 
 
 def tracked():
-    out = subprocess.check_output(["git", "ls-files", "*.py", "static/*.js", "static/*.css"], text=True)
+    out = subprocess.check_output(
+        ["git", "ls-files", "*.py", "src/craig_transcriber/static/*.js", "src/craig_transcriber/static/*.css"],
+        text=True,
+    )
     return out.split()
 
 

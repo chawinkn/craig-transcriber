@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Craig Transcriber: run `python main.py`, see README.md."""
+"""Craig Transcriber: run `craig-transcriber` or `python -m craig_transcriber`, see README.md."""
 
 import argparse
 import os
@@ -10,13 +9,12 @@ from pathlib import Path
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
-import server
-import transcribe
-from project import Project
+from . import server, transcribe
+from .project import Project
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Craig Transcriber")
+    ap = argparse.ArgumentParser(prog="craig-transcriber", description="Craig Transcriber")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--host", default="127.0.0.1", help="address to listen on (0.0.0.0 inside a container)")
     ap.add_argument("--data", default="craig_work", help="folder where audio copies and your work are kept")

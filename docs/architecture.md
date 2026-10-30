@@ -2,7 +2,7 @@
 
 Local app that turns a Craig (craig.chat) multi-track recording into a transcript with faster-whisper, then serves a browser UI to listen Line by Line and fix mistakes. Nothing leaves the machine. Thai and English (mixed included) come first: the Thai models, Line splitting and joining, and the review rules are tuned for them; other languages run through auto-detect, untested. Dependencies: stdlib only, plus `faster-whisper` (which pulls in `av` and `numpy`). Domain terms: `GLOSSARY.md`; user-facing changes: `CHANGELOG.md`.
 
-Import direction: `project` <- `transcribe` <- `server` <- `main`, no cycles. `main()` wires `Project(dir)`, `Job(proj)` and `server.make_server(host, port, proj, job)`. Tests are in `test_app.py`.
+Import direction: `project` <- `transcribe` <- `server` <- `__main__`, no cycles. All of it is the `craig_transcriber` package under `src/` (modules import each other with `from . import`); `main()` in `__main__.py`, run as `craig-transcriber` or `python -m craig_transcriber`, wires `Project(dir)`, `Job(proj)` and `server.make_server(host, port, proj, job)`. Tests are in `tests/test_app.py`. Dependencies, entry point and ruff settings are in `pyproject.toml`.
 
 ## `project.py`
 
@@ -26,7 +26,7 @@ Import direction: `project` <- `transcribe` <- `server` <- `main`, no cycles. `m
 
 **Models**
 - `MODELS` is the one model catalog. `model_catalog(data_dir)` adds `slow`, `default` (cpu/gpu) and each Thai model's state from `thai_model_state()`: Installed only when all `MODEL_FILES` exist, else incomplete or missing. It is sent to the page in `/api/state` `env.models`.
-- `convert_model.py` is a separate optional script (needs `ctranslate2`, `transformers`, `torch`) that converts the Thai models into `<data>/models/<name>/` (`output_dir()` there uses `transcribe.model_dir()`). It imports `transcribe`; the app never imports it.
+- `convert_model.py` is a separate optional module, run as `python -m craig_transcriber.convert_model` (needs the `convert` extra: `ctranslate2`, `transformers`, `torch`) that converts the Thai models into `<data>/models/<name>/` (`output_dir()` there uses `transcribe.model_dir()`). It imports `transcribe`; the app never imports it.
 
 **`WhisperEngine(model_name, prefer_cpu, on_status)`** is only the Whisper side.
 - Loads CUDA float16, then CUDA int8_float16, then CPU int8; `use_cpu()` reloads on the CPU; `available()` is static.
@@ -61,7 +61,7 @@ Import direction: `project` <- `transcribe` <- `server` <- `main`, no cycles. `m
 - `/audio/<sid>` has hand-rolled Range support (browser seeking needs it). `/export.{txt,srt,json}` downloads the transcript.
 - `/api/upload` streams the raw body (name in `?name=`) and accepts audio files or a `.zip` of tracks (Craig names them `1-name.flac`; `speaker_name_from` strips the prefix).
 
-## `static/` and `main.py`
+## `static/` and `__main__.py`
 
-- `static/` is the whole frontend: `index.html` (markup, at `/`), `app.js`, `style.css`, all served from the `STATIC` map in `server.py`. Each file is re-read on every request, so an edit needs only a browser reload. No build step.
-- `main.py`: argparse, builds `Project` and `Job`, starts the server.
+- `static/` (inside the package, shipped as package data) is the whole frontend: `index.html` (markup, at `/`), `app.js`, `style.css`, all served from the `STATIC` map in `server.py`. Each file is re-read on every request, so an edit needs only a browser reload. No build step.
+- `__main__.py`: argparse, builds `Project` and `Job`, starts the server.

@@ -84,16 +84,16 @@ Prerequisites:
 - [Python](https://www.python.org/downloads/) 3.9 or later
 - For GPU acceleration: an NVIDIA GPU with a driver that supports CUDA 12
 
-1. Create a virtual environment and install the dependencies:
+1. Create a virtual environment and install the app:
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate        # Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"   # optional, for NVIDIA GPUs
+   pip install .
+   pip install ".[gpu]"             # optional, for NVIDIA GPUs
    ```
 2. Start the app:
    ```bash
-   python main.py
+   craig-transcriber                # or: python -m craig_transcriber
    ```
 
 Your browser opens at http://127.0.0.1:8765, and your work is saved in `craig_work/`.
@@ -147,11 +147,11 @@ You can also enter any other faster-whisper model name or Hugging Face repositor
 The Thai models are not published in faster-whisper's format, so each one is converted once on your machine. The conversion needs extra packages that the app itself does not:
 
 ```bash
-pip install ctranslate2 transformers torch
-python convert_model.py typhoon     # or: pathumma
+pip install ".[convert]"
+python -m craig_transcriber.convert_model typhoon     # or: pathumma
 ```
 
-The model is written to `craig_work/models/<name>/` (use `--data` if you run `main.py` with another folder). Until then, choosing it shows this command and the run will not start. Set **Language spoken** to Thai when you use one. `convert_model.py` also takes any Hugging Face Whisper repository id and prints the folder to enter under **Other model name**.
+The model is written to `craig_work/models/<name>/` (use `--data` if you run `craig-transcriber` with another folder). Until then, choosing it shows this command and the run will not start. Set **Language spoken** to Thai when you use one. `craig_transcriber.convert_model` also takes any Hugging Face Whisper repository id and prints the folder to enter under **Other model name**.
 
 With Docker, convert on the host, then add the folder to `docker run`:
 
@@ -165,38 +165,41 @@ docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v craig_data:/data -v 
 ## Development
 
 ```bash
-python3 test_app.py   # stdlib unittest; no model or GPU needed
+pip install -e ".[dev]"
+python -m unittest discover -s tests   # stdlib unittest; no model or GPU needed
 ```
 
-Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python) and [Biome](https://biomejs.dev/) (`static/*.js`, `static/*.css`), and comments may not carry history (issue numbers, dates, "used to"). One script runs everything:
+Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python) and [Biome](https://biomejs.dev/) (`src/craig_transcriber/static/*.js`, `*.css`), and comments may not carry history (issue numbers, dates, "used to"). One script runs everything:
 
 ```bash
-pip install -r requirements-dev.txt        # ruff; Biome runs through npx, so it needs Node
+pip install -e ".[dev]"                    # ruff; Biome runs through npx, so it needs Node
 bash scripts/check.sh                      # check the whole repo, as CI does
 bash scripts/check.sh --fix [files...]     # format and fix the files (all if none), then check them
 git config core.hooksPath .githooks        # run the fix on staged files before every commit
 ```
 
-The pre-commit hook re-stages the files it formats and aborts the commit if a check still fails. CI (GitHub Actions, Python 3.9 and 3.12) runs `scripts/check.sh` and `test_app.py` on every push to `main` and every pull request.
+The pre-commit hook re-stages the files it formats and aborts the commit if a check still fails. CI (GitHub Actions, Python 3.9 and 3.12) runs `scripts/check.sh` and the tests on every push to `main` and every pull request.
 
 | File | Role |
 |---|---|
-| `main.py` | Entry point: parses arguments, wires everything together, starts the server |
+| File (in `src/craig_transcriber/`) | Role |
+|---|---|
+| `__main__.py` | Entry point (`craig-transcriber`, `python -m craig_transcriber`): parses arguments, wires everything together, starts the server |
 | `project.py` | `Project`: the saved project (speakers, lines, audio copies) and exports |
 | `transcribe.py` | `WhisperEngine` (model loading, audio decoding) and `Job` (the background transcription job) |
 | `server.py` | HTTP handler: JSON API, audio streaming with Range support, the page |
-| `static/index.html` | The whole frontend, with no build step |
+| `static/` | The whole frontend (`index.html`, `app.js`, `style.css`), with no build step |
 | `convert_model.py` | Optional one-time installer for the Thai models; not imported by the app |
 
-`static/index.html` is re-read on every request, so HTML edits need only a browser reload. Python edits need a restart.
+The files in `static/` are re-read on every request, so frontend edits need only a browser reload. Python edits need a restart.
 
-With Docker, the source is copied into the image at build time. To iterate without rebuilding, mount it:
+With Docker, the package is installed into the image at build time. To iterate without rebuilding, mount the source over the installed package:
 
 ```bash
-docker run --init --rm -p 127.0.0.1:8765:8765 -v craig_data:/data -v "$PWD:/app" craig-transcriber
+docker run --init --rm -p 127.0.0.1:8765:8765 -v craig_data:/data -v "$PWD/src/craig_transcriber:/usr/local/lib/python3.12/site-packages/craig_transcriber" craig-transcriber
 ```
 
-Rebuild after changing the `Dockerfile` or dependencies. The dependency and model layers are cached, so a source-only rebuild is quick.
+Rebuild after changing the `Dockerfile` or dependencies. The model layer is cached before the source is copied, so a source-only rebuild stays quick.
 
 ## Troubleshooting
 

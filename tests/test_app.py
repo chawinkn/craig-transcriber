@@ -13,10 +13,9 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-import convert_model
-import server
-from project import Project
-from transcribe import (
+from craig_transcriber import convert_model, server
+from craig_transcriber.project import Project
+from craig_transcriber.transcribe import (
     CLIP_PAD,
     MODEL_FILES,
     EngineCrashed,
@@ -1355,14 +1354,14 @@ class JobTest(unittest.TestCase):
 
     def test_thai_model_must_be_installed(self):
         err = Job(self.p, FakeEngine).start({"speakers": [self.sid], "model": "typhoon"})["error"]
-        self.assertIn("python convert_model.py typhoon", err)
+        self.assertIn("python -m craig_transcriber.convert_model typhoon", err)
         folder = convert_model.output_dir("typhoon", self.p.dir)
         folder.mkdir(parents=True)
         (folder / "model.bin").write_bytes(b"")
         err = Job(self.p, FakeEngine).start({"speakers": [self.sid], "model": "typhoon"})["error"]
         self.assertIn("incomplete", err)
         self.assertIn("preprocessor_config.json", err)
-        self.assertIn("python convert_model.py typhoon", err)
+        self.assertIn("python -m craig_transcriber.convert_model typhoon", err)
         for f in MODEL_FILES:
             (folder / f).write_bytes(b"")
         loaded = []
@@ -1415,7 +1414,7 @@ class ServerTest(unittest.TestCase):
 
 class HistoryCommentsTest(unittest.TestCase):
     def found(self, name, text):
-        sys.path.insert(0, str(Path(__file__).parent / "scripts"))
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
         self.addCleanup(sys.path.pop, 0)
         import no_history_comments
 
