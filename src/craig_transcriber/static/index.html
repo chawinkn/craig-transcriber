@@ -1,50 +1,206 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Craig Transcriber</title>
-<link rel="stylesheet" href="/style.css">
-</head><body><main>
-<h1>Craig Transcriber</h1>
-<p class="sub">Turn a Craig recording into a written transcript, then listen line by line and fix the mistakes. Everything stays on this computer.</p>
-<div id="envBox"></div>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Craig Transcriber</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Craig Transcriber</h1>
+      <p class="sub">
+        Turn a Craig recording into a written transcript, then listen line by line and fix the
+        mistakes. Everything stays on this computer.
+      </p>
+      <div id="envBox"></div>
 
-<section id="s1"><h2><span class="num">1</span>Add your recording</h2>
-<p class="sub">Drop the files you downloaded from Craig. Craig records each person on their own track, so you get one audio file per person, usually inside a .zip.</p>
-<div class="drop" id="drop">Drop the .zip or audio files here<br><span class="small">.flac, .wav, .mp3 and similar all work</span><br><br><button id="pick" class="primary">Choose files…</button><input id="file" type="file" multiple hidden accept=".zip,audio/*,.flac,.wav,.mp3,.ogg,.m4a,.aac,.opus"></div>
-<div id="upMsg" class="small muted"></div>
-<div class="people" id="people"></div></section>
+      <section id="s1">
+        <h2>
+          <span class="num">1</span>
+          Add your recording
+        </h2>
+        <p class="sub">
+          Drop the files you downloaded from Craig. Craig records each person on their own track, so
+          you get one audio file per person, usually inside a .zip.
+        </p>
+        <div class="drop" id="drop">
+          Drop the .zip or audio files here
+          <br />
+          <span class="small">.flac, .wav, .mp3 and similar all work</span>
+          <br />
+          <br />
+          <button id="pick" class="primary">Choose files…</button>
+          <input
+            id="file"
+            type="file"
+            multiple
+            hidden
+            accept=".zip,audio/*,.flac,.wav,.mp3,.ogg,.m4a,.aac,.opus"
+          />
+        </div>
+        <div id="upMsg" class="small muted"></div>
+        <div class="people" id="people"></div>
+      </section>
 
-<section id="s2"><h2><span class="num">2</span>Make the transcript</h2>
-<p class="sub">An AI model called Whisper listens to each person and types what they said. It runs on your computer. The first time, the model is downloaded once.</p>
-<div class="grid">
- <div><label for="lang">Language spoken</label><select id="lang"><option value="th">Thai (also best when Thai and English are mixed)</option><option value="en">English</option><option value="">Detect automatically (less reliable for mixed speech)</option></select></div>
- <div><label for="model">Quality</label><select id="model"></select><div class="small muted" id="modelHint"></div></div>
- <div><label for="device">Use</label><select id="device"><option value="auto">Graphics card if available</option><option value="cpu">Processor only</option></select></div>
-</div>
-<details><summary>Optional: help it with names and words</summary>
-<p class="small muted">Type words that appear in your talk (names, product or technical terms, in the spelling you want). Whisper tends to copy this spelling.</p>
-<input type="text" id="prompt" style="width:100%" placeholder="e.g. ขนุน, Chulalongkorn, deadline, backend, Go Fiber"><p class="small muted">Other model name (advanced): <input type="text" id="custom" style="width:280px" placeholder="leave empty, or e.g. a Hugging Face faster-whisper model"></p></details>
-<div class="row" style="margin-top:12px"><button class="primary big" id="go">Start transcribing</button><button id="stop" class="hide">Stop</button><span class="small muted" id="goHint"></span></div>
-<div id="job" class="hide"><p><b id="jobWho"></b></p><div class="bar"><div id="jobBar"></div></div><p id="jobText" class="small"></p><p id="jobNote" class="small muted"></p><div class="live" id="live"></div></div>
-<div id="jobEnd"></div></section>
+      <section id="s2">
+        <h2>
+          <span class="num">2</span>
+          Make the transcript
+        </h2>
+        <p class="sub">
+          An AI model called Whisper listens to each person and types what they said. It runs on
+          your computer. The first time, the model is downloaded once.
+        </p>
+        <div class="grid">
+          <div>
+            <label for="lang">Language spoken</label>
+            <select id="lang">
+              <option value="th">Thai (also best when Thai and English are mixed)</option>
+              <option value="en">English</option>
+              <option value="">Detect automatically (less reliable for mixed speech)</option>
+            </select>
+          </div>
+          <div>
+            <label for="model">Quality</label>
+            <select id="model"></select>
+            <div class="small muted" id="modelHint"></div>
+          </div>
+          <div>
+            <label for="device">Use</label>
+            <select id="device">
+              <option value="auto">Graphics card if available</option>
+              <option value="cpu">Processor only</option>
+            </select>
+          </div>
+        </div>
+        <details>
+          <summary>Optional: help it with names and words</summary>
+          <p class="small muted">
+            Type words that appear in your talk (names, product or technical terms, in the spelling
+            you want). Whisper tends to copy this spelling.
+          </p>
+          <input
+            type="text"
+            id="prompt"
+            style="width: 100%"
+            placeholder="e.g. ขนุน, Chulalongkorn, deadline, backend, Go Fiber"
+          />
+          <p class="small muted">
+            Other model name (advanced):
+            <input
+              type="text"
+              id="custom"
+              style="width: 280px"
+              placeholder="leave empty, or e.g. a Hugging Face faster-whisper model"
+            />
+          </p>
+        </details>
+        <div class="row" style="margin-top: 12px">
+          <button class="primary big" id="go">Start transcribing</button>
+          <button id="stop" class="hide">Stop</button>
+          <span class="small muted" id="goHint"></span>
+        </div>
+        <div id="job" class="hide">
+          <p><b id="jobWho"></b></p>
+          <div class="bar"><div id="jobBar"></div></div>
+          <p id="jobText" class="small"></p>
+          <p id="jobNote" class="small muted"></p>
+          <div class="live" id="live"></div>
+        </div>
+        <div id="jobEnd"></div>
+      </section>
 
-<section id="s3"><h2><span class="num">3</span>Check and fix</h2>
-<p class="sub">Press ▶ on a line to hear it. Type in the box to fix the words. Tick <b>reviewed</b> when a line is right, or press <b>Alt+Enter</b> to tick it and play the next line. <b>Alt+↓</b> jumps to the next unsure line or <b>Missed speech</b>: a dashed row where someone spoke but no line holds the words. Edits save automatically.</p>
-<div class="row small hide" id="chkBox" style="margin:8px 0"><button id="chk">Check for missed speech</button><span class="muted" id="chkMsg"></span></div>
-<div class="bar2" id="tools">
- <button id="halt">■ Stop audio</button>
- <label>Speed <select id="rate"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option></select></label>
- <label><input type="checkbox" id="loop"> repeat line</label>
- <label><input type="checkbox" id="auto"> play next line automatically</label>
- <label>Show <select id="filter"><option value="all">all lines</option><option value="todo">not reviewed yet</option><option value="check">worth a second look</option><option value="mixed">Thai/English</option></select></label>
- <span class="small muted" id="counts"></span><span class="small muted" id="saveState"></span>
-</div>
-<details><summary>Find and replace</summary><div class="row" style="margin:8px 0"><input type="text" id="find" placeholder="Find"><input type="text" id="repl" placeholder="Replace with"><label class="small"><input type="checkbox" id="matchCase"> match case</label><button id="replaceAll">Replace all</button><span class="small muted" id="replMsg"></span></div></details>
-<p class="small muted" id="emptyLines">There are no lines yet. Finish step 2 first.</p>
-<div id="list"></div></section>
+      <section id="s3">
+        <h2>
+          <span class="num">3</span>
+          Check and fix
+        </h2>
+        <p class="sub">
+          Press ▶ on a line to hear it. Type in the box to fix the words. Tick
+          <b>reviewed</b>
+          when a line is right, or press
+          <b>Alt+Enter</b>
+          to tick it and play the next line.
+          <b>Alt+↓</b>
+          jumps to the next unsure line or
+          <b>Missed speech</b>
+          row, a dashed row where someone spoke but no line holds the words. Edits save
+          automatically.
+        </p>
+        <div class="row small hide" id="chkBox" style="margin: 8px 0">
+          <button id="chk">Check for missed speech</button>
+          <span class="muted" id="chkMsg"></span>
+        </div>
+        <div class="bar2" id="tools">
+          <button id="halt">■ Stop audio</button>
+          <label>
+            Speed
+            <select id="rate">
+              <option>0.75</option>
+              <option selected>1</option>
+              <option>1.25</option>
+              <option>1.5</option>
+            </select>
+          </label>
+          <label>
+            <input type="checkbox" id="loop" />
+            repeat line
+          </label>
+          <label>
+            <input type="checkbox" id="auto" />
+            play next line automatically
+          </label>
+          <label>
+            Show
+            <select id="filter">
+              <option value="all">all lines</option>
+              <option value="todo">not reviewed yet</option>
+              <option value="check">worth a second look</option>
+              <option value="mixed">Thai/English</option>
+            </select>
+          </label>
+          <span class="small muted" id="counts"></span>
+          <span class="small muted" id="saveState"></span>
+        </div>
+        <details>
+          <summary>Find and replace</summary>
+          <div class="row" style="margin: 8px 0">
+            <input type="text" id="find" placeholder="Find" />
+            <input type="text" id="repl" placeholder="Replace with" />
+            <label class="small">
+              <input type="checkbox" id="matchCase" />
+              match case
+            </label>
+            <button id="replaceAll">Replace all</button>
+            <span class="small muted" id="replMsg"></span>
+          </div>
+        </details>
+        <p class="small muted" id="emptyLines">There are no lines yet. Finish step 2 first.</p>
+        <div id="list"></div>
+      </section>
 
-<section id="s4"><h2><span class="num">4</span>Save your work</h2>
-<p class="sub">Each line is written as <code>[time] Person: words</code>, all people merged in time order. Your work is also saved automatically in the <code>craig_work</code> folder, so you can close this and carry on later.</p>
-<div class="row"><a href="/export.txt"><button class="primary">Download text (.txt)</button></a><a href="/export.srt"><button>Download subtitles (.srt)</button></a><a href="/export.json"><button>Download data (.json)</button></a><button id="reset" style="margin-left:auto">Start over</button></div></section>
-<audio id="player" preload="auto"></audio>
-</main>
-<script src="/app.js"></script></body></html>
+      <section id="s4">
+        <h2>
+          <span class="num">4</span>
+          Save your work
+        </h2>
+        <p class="sub">
+          Each line is written as
+          <code>[time] Person: words</code>
+          with all people merged in time order. Your work is also saved automatically in the
+          <code>craig_work</code>
+          folder, so you can close this and carry on later.
+        </p>
+        <div class="row">
+          <a href="/export.txt"><button class="primary">Download text (.txt)</button></a>
+          <a href="/export.srt"><button>Download subtitles (.srt)</button></a>
+          <a href="/export.json"><button>Download data (.json)</button></a>
+          <button id="reset" style="margin-left: auto">Start over</button>
+        </div>
+      </section>
+      <audio id="player" preload="auto"></audio>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

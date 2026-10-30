@@ -169,10 +169,10 @@ pip install -e ".[dev]"
 python -m unittest discover -s tests   # stdlib unittest; no model or GPU needed
 ```
 
-Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python) and [Biome](https://biomejs.dev/) (`src/craig_transcriber/static/*.js`, `*.css`), and comments may not carry history (issue numbers, dates, "used to"). One script runs everything:
+Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python), [Biome](https://biomejs.dev/) (`src/craig_transcriber/static/*.js`, `*.css`) and [Prettier](https://prettier.io/) (`static/*.html`). One script runs everything:
 
 ```bash
-pip install -e ".[dev]"                    # ruff; Biome runs through npx, so it needs Node
+pip install -e ".[dev]"                    # ruff; Biome and Prettier run through npx, so they need Node
 bash scripts/check.sh                      # check the whole repo, as CI does
 bash scripts/check.sh --fix [files...]     # format and fix the files (all if none), then check them
 git config core.hooksPath .githooks        # run the fix on staged files before every commit

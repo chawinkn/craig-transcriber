@@ -38,7 +38,8 @@ class ModelCatalogTest(unittest.TestCase):
             {"medium", "large-v3-turbo", "large-v3", "typhoon", "pathumma"},
         )
         self.assertEqual(
-            {m["default"]: n for n, m in catalog.items() if m.get("default")}, {"cpu": "small", "gpu": "large-v3"}
+            {m["default"]: n for n, m in catalog.items() if m.get("default")},
+            {"cpu": "small", "gpu": "large-v3"},
         )
         self.assertTrue(all(m["label"] for m in catalog.values()))
 
@@ -56,7 +57,14 @@ class WhisperEngineTest(unittest.TestCase):
         segment = type(
             "S",
             (),
-            {"start": 0.0, "end": 1.0, "text": " hi", "avg_logprob": -0.2, "no_speech_prob": 0.1, "words": [word]},
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "text": " hi",
+                "avg_logprob": -0.2,
+                "no_speech_prob": 0.1,
+                "words": [word],
+            },
         )
 
         class Model:
@@ -72,14 +80,23 @@ class WhisperEngineTest(unittest.TestCase):
         engine = Engine("m", True, lambda **kw: None)
         dur, segs = engine.transcribe("a.wav", "th", "")
         self.assertEqual((dur, engine.language), (2.0, "th"))
-        self.assertEqual(list(segs)[0]["words"], [{"start": 0.0, "end": 0.5, "text": " hi", "prob": 0.9}])
+        self.assertEqual(
+            list(segs)[0]["words"], [{"start": 0.0, "end": 0.5, "text": " hi", "prob": 0.9}]
+        )
 
     def test_clip_cuts_the_padded_part_and_keeps_times_in_the_whole_audio(self):
         word = type("W", (), {"start": 0.5, "end": 1.0, "word": " hi", "probability": 0.9})
         segment = type(
             "S",
             (),
-            {"start": 0.5, "end": 1.0, "text": " hi", "avg_logprob": -0.2, "no_speech_prob": 0.1, "words": [word]},
+            {
+                "start": 0.5,
+                "end": 1.0,
+                "text": " hi",
+                "avg_logprob": -0.2,
+                "no_speech_prob": 0.1,
+                "words": [word],
+            },
         )
         got = []
 
@@ -95,7 +112,11 @@ class WhisperEngineTest(unittest.TestCase):
                 self._model, self.device = Model(), "cpu"
 
         engine = Engine("m", True, lambda **kw: None)
-        for clip, secs, first in (((10, 20), 12, 9.0), ((0.5, 5), 6.0, 0.0), ((97, 99.5), 4.0, 96.0)):
+        for clip, secs, first in (
+            ((10, 20), 12, 9.0),
+            ((0.5, 5), 6.0, 0.0),
+            ((97, 99.5), 4.0, 96.0),
+        ):
             dur, segs = engine.transcribe("a.wav", "th", "", clip)
             seg0 = list(segs)[0]
             self.assertEqual(
@@ -119,7 +140,8 @@ class WhisperEngineTest(unittest.TestCase):
                 pass
 
         with mock.patch.dict(
-            sys.modules, {"faster_whisper": types.ModuleType("faster_whisper"), "faster_whisper.vad": vad}
+            sys.modules,
+            {"faster_whisper": types.ModuleType("faster_whisper"), "faster_whisper.vad": vad},
         ):
             self.assertEqual(Engine("m", True, lambda **kw: None).voice("a.wav"), [[1.0, 2.5]])
 
@@ -136,13 +158,20 @@ class ProcessEngineTest(unittest.TestCase):
 
     def test_clip_goes_over_the_pipe(self):
         engine = IsolatedEngine("clip", True, lambda **kw: None)
-        self.assertEqual([s["text"] for s in engine.transcribe("a.wav", "th", "", (3.0, 4.5))[1]], ["clip (3.0, 4.5)"])
-        self.assertEqual([s["text"] for s in engine.transcribe("a.wav", "th", "")[1]], ["clip None"])
+        self.assertEqual(
+            [s["text"] for s in engine.transcribe("a.wav", "th", "", (3.0, 4.5))[1]],
+            ["clip (3.0, 4.5)"],
+        )
+        self.assertEqual(
+            [s["text"] for s in engine.transcribe("a.wav", "th", "")[1]], ["clip None"]
+        )
 
     def test_voice_goes_over_the_pipe_and_errors_and_crashes_come_back(self):
         engine = IsolatedEngine("ok", True, lambda **kw: None)
         self.assertEqual(engine.voice("a.wav"), [[0.0, 1.5]])
-        self.assertEqual(next(engine.transcribe("a.wav", "th", "")[1])["text"].split()[2:], ["line", "0"])
+        self.assertEqual(
+            next(engine.transcribe("a.wav", "th", "")[1])["text"].split()[2:], ["line", "0"]
+        )
         with self.assertRaisesRegex(RuntimeError, "no vad"):
             IsolatedEngine("bad-voice", True, lambda **kw: None).voice("a.wav")
         with self.assertRaises(EngineCrashed):
@@ -167,7 +196,9 @@ class ProcessEngineTest(unittest.TestCase):
     def test_closing_before_reading_still_leaves_the_pipe_clean(self):
         engine = IsolatedEngine("slow", True, lambda **kw: None)
         engine.transcribe("a.wav", "th", "")[1].close()
-        self.assertEqual(next(engine.transcribe("a.wav", "th", "")[1])["text"].split()[2:], ["line", "0"])
+        self.assertEqual(
+            next(engine.transcribe("a.wav", "th", "")[1])["text"].split()[2:], ["line", "0"]
+        )
 
 
 if __name__ == "__main__":

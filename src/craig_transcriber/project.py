@@ -25,20 +25,28 @@ MIME = {
 
 def hms(t):
     t = max(0, int(t))
-    return f"{t // 3600:d}:{t % 3600 // 60:02d}:{t % 60:02d}" if t >= 3600 else f"{t // 60:02d}:{t % 60:02d}"
+    return (
+        f"{t // 3600:d}:{t % 3600 // 60:02d}:{t % 60:02d}"
+        if t >= 3600
+        else f"{t // 60:02d}:{t % 60:02d}"
+    )
 
 
 def srt_time(t):
     ms = int(round(t * 1000))
-    return f"{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}:{ms % 60000 // 1000:02d},{ms % 1000:03d}"
+    return (
+        f"{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}:{ms % 60000 // 1000:02d},{ms % 1000:03d}"
+    )
 
 
-# The lowest word probability is the best sign of a wrong Line; under 0.3 tags about one Line in eight on Thai meetings.
+# The lowest word probability is the best sign of a wrong Line; under 0.3 tags about one Line in
+# eight on Thai meetings.
 UNSURE_WORD_PROB = 0.3
 
 
 def unsure_spans(text, words):
-    """[start, end) character spans in text of the words under UNSURE_WORD_PROB, found in order; touching ones merge."""
+    """[start, end) character spans in text of the words under UNSURE_WORD_PROB, found in order;
+    touching ones merge."""
     spans, pos = [], 0
     for w in words:
         piece = w["text"].strip()
@@ -55,7 +63,10 @@ def unsure_spans(text, words):
 
 
 LINE_MAX_CPS = 30.0  # faster than anyone speaks
-MISSED_MIN_SECONDS, MISSED_MAX_CPS = 4.0, 2.0  # a Line this long and this empty has swallowed speech
+MISSED_MIN_SECONDS, MISSED_MAX_CPS = (
+    4.0,
+    2.0,
+)  # a Line this long and this empty has swallowed speech
 
 
 def repeats(text):
@@ -64,10 +75,12 @@ def repeats(text):
 
 
 def foreign_letters(text):
-    """Letters that are neither Thai nor Latin. Latin: Basic through Extended-B (U+024F) plus Extended Additional
-    (U+1E00-1EFF, Vietnamese)."""
+    """Letters that are neither Thai nor Latin. Latin: Basic through Extended-B (U+024F) plus
+    Extended Additional (U+1E00-1EFF, Vietnamese)."""
     return any(
-        ch.isalpha() and not ("\u0e00" <= ch <= "\u0e7f" or ch <= "\u024f" or "\u1e00" <= ch <= "\u1eff") for ch in text
+        ch.isalpha()
+        and not ("\u0e00" <= ch <= "\u0e7f" or ch <= "\u024f" or "\u1e00" <= ch <= "\u1eff")
+        for ch in text
     )
 
 
@@ -77,15 +90,18 @@ def too_fast(text, start, end):
 
 
 def too_slow(text, start, end):
-    return end - start >= MISSED_MIN_SECONDS and len(re.sub(r"\s+", "", text)) / (end - start) < MISSED_MAX_CPS
+    return (
+        end - start >= MISSED_MIN_SECONDS
+        and len(re.sub(r"\s+", "", text)) / (end - start) < MISSED_MAX_CPS
+    )
 
 
 def review_flags(line):
-    """reasons: why the Line is unsure, in a fixed order; empty once the text differs from what the model wrote
-    (edited, which includes Lines typed in by hand). Every rule runs on the current text and times, so a rule change
-    applies to old Lines too (a stored "suspect" from older runs is ignored). "missed speech" comes last: a Line of
-    4 s or more with under 2 characters per second. mixed: Thai with English. unsure_words: character spans in the
-    text."""
+    """reasons: why the Line is unsure, in a fixed order; empty once the text differs from what the
+    model wrote (edited, which includes Lines typed in by hand). Every rule runs on the current
+    text and times, so a rule change applies to old Lines too (a stored "suspect" from older runs
+    is ignored). "missed speech" comes last: a Line of 4 s or more with under 2 characters per
+    second. mixed: Thai with English. unsure_words: character spans in the text."""
     text, words = line["text"], line.get("words")
     edited = text != line.get("orig", text)
     spans = [] if edited or not words else unsure_spans(text, words)
@@ -110,7 +126,8 @@ def review_flags(line):
         "unsure_words": spans,
         "reasons": reasons,
         "unsure": bool(reasons),
-        "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2,
+        "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text))
+        and len(re.findall(r"[A-Za-z]", text)) >= 2,
     }
 
 
@@ -118,7 +135,8 @@ MISSED_MIN_VOICE = 2.0  # seconds of voice with no Line over it that count as Mi
 
 
 def missed_stretches(speech, spans):
-    """Parts of the voice stretches [start, end] that no span covers, kept when MISSED_MIN_VOICE or longer."""
+    """Parts of the voice stretches [start, end] that no span covers, kept when MISSED_MIN_VOICE
+    or longer."""
     out, spans = [], sorted(spans)
 
     def keep(a, b):
@@ -144,7 +162,8 @@ def speaker_name_from(filename):
 
 
 def probe_duration(path):
-    """Length in seconds, or None when the file does not say (streamed FLAC from Craig often doesn't)."""
+    """Length in seconds, or None when the file does not say (streamed FLAC from Craig often
+    doesn't)."""
     try:
         import av
 
@@ -198,8 +217,9 @@ class Project:
         return sorted(self._p["lines"], key=lambda ln: (ln["start"], order.get(ln["spk"], 0)))
 
     def state(self):
-        """Each Line carries its review flags; a Speaker is "touched" when a Line of theirs was reviewed,
-        edited or deleted since the model wrote it, and has its Missed speech stretches."""
+        """Each Line carries its review flags; a Speaker is "touched" when a Line of theirs was
+        reviewed, edited or deleted since the model wrote it, and has its Missed speech
+        stretches."""
         with self._lock:
             st = copy.deepcopy({"speakers": self._p["speakers"], "lines": self._sorted_lines()})
         for ln in st["lines"]:
@@ -211,7 +231,8 @@ class Project:
             sp["missed"] = [
                 m
                 for m in missed_stretches(
-                    sp.get("speech") or [], [(ln["start"], ln["end"]) for ln in st["lines"] if ln["spk"] == sp["id"]]
+                    sp.get("speech") or [],
+                    [(ln["start"], ln["end"]) for ln in st["lines"] if ln["spk"] == sp["id"]],
                 )
                 if not any(a <= (m["start"] + m["end"]) / 2 <= b for a, b in gone)
             ]
@@ -366,7 +387,9 @@ class Project:
 
     def add_line_at(self, sid, start, end):
         with self._lock:
-            nums = all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (start, end))
+            nums = all(
+                isinstance(x, (int, float)) and not isinstance(x, bool) for x in (start, end)
+            )
             if not self._speaker(sid) or not nums or not 0 <= start < end:
                 return None
             line = {
@@ -386,7 +409,9 @@ class Project:
     def dismiss_missed(self, sid, start, end):
         with self._lock:
             sp = self._speaker(sid)
-            if sp and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (start, end)):
+            if sp and all(
+                isinstance(x, (int, float)) and not isinstance(x, bool) for x in (start, end)
+            ):
                 sp.setdefault("dismissed", []).append([start, end])
                 self._save()
 
@@ -438,8 +463,9 @@ class Project:
             self._save()
 
     def replace_stretch(self, sid, start, end, segments):
-        """Swap this Speaker's Lines whose midpoint is in [start, end] for the new ones whose midpoint is too;
-        everything else, and the Speaker's run, speech and dismissed stretches, stays."""
+        """Swap this Speaker's Lines whose midpoint is in [start, end] for the new ones whose
+        midpoint is too; everything else, and the Speaker's run, speech and dismissed stretches,
+        stays."""
 
         def inside(ln):
             return start <= (ln["start"] + ln["end"]) / 2 <= end
@@ -464,7 +490,10 @@ class Project:
                     "orig": s["text"],
                     "conf": None if conf is None else round(float(conf), 3),
                     "ok": False,
-                    "words": [{"text": x["text"], "prob": round(float(x["prob"]), 3)} for x in s.get("words") or []],
+                    "words": [
+                        {"text": x["text"], "prob": round(float(x["prob"]), 3)}
+                        for x in s.get("words") or []
+                    ],
                 }
             )
 
@@ -476,7 +505,8 @@ class Project:
                 self._save()
 
     def reset(self):
-        """Forget everything. Only removes our own files (project.json, audio/), not the whole folder."""
+        """Forget everything. Only removes our own files (project.json, audio/), not the whole
+        folder."""
         with self._lock:
             self._p.update(speakers=[], lines=[], seq=0)
             (self.dir / "project.json").unlink(missing_ok=True)

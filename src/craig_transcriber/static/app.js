@@ -1,6 +1,15 @@
 (() => {
   const $ = (s) => document.querySelector(s),
-    COLORS = ["#2563eb", "#c026d3", "#059669", "#d97706", "#dc2626", "#0891b2", "#7c3aed", "#65a30d"];
+    COLORS = [
+      "#2563eb",
+      "#c026d3",
+      "#059669",
+      "#d97706",
+      "#dc2626",
+      "#0891b2",
+      "#7c3aed",
+      "#65a30d",
+    ];
   const PAD_B = 0.4,
     PAD_A = 0.3;
   let S = { speakers: [], lines: [], env: {} },
@@ -65,7 +74,11 @@
       );
     else if (e.cuda > 0)
       b.append(
-        el("div", { class: "box ok" }, "✓ NVIDIA graphics card found. Transcribing will use it, which is much faster."),
+        el(
+          "div",
+          { class: "box ok" },
+          "✓ NVIDIA graphics card found. Transcribing will use it, which is much faster.",
+        ),
       );
     else
       b.append(
@@ -90,7 +103,8 @@
     const sel = $("#model");
     if (!sel.options.length) {
       for (const m of e.models || []) sel.append(el("option", { value: m.name }, m.label));
-      sel.value = (e.models || []).find((m) => m.default === (e.cuda > 0 ? "gpu" : "cpu"))?.name || "";
+      sel.value =
+        (e.models || []).find((m) => m.default === (e.cuda > 0 ? "gpu" : "cpu"))?.name || "";
       updateModelHint();
     }
   }
@@ -147,7 +161,9 @@
                   try {
                     j = JSON.parse(x.responseText);
                   } catch (_) {}
-                  $("#upMsg").textContent = j.error ? `⚠ ${j.error}` : `Added ${(j.added || []).join(", ")}`;
+                  $("#upMsg").textContent = j.error
+                    ? `⚠ ${j.error}`
+                    : `Added ${(j.added || []).join(", ")}`;
                   res();
                 };
                 x.onerror = () => {
@@ -232,7 +248,8 @@
     device: $("#device").value,
     prompt: $("#prompt").value,
   });
-  const unchecked = () => S.speakers.filter((s) => !s.speech && S.lines.some((l) => l.spk === s.id));
+  const unchecked = () =>
+    S.speakers.filter((s) => !s.speech && S.lines.some((l) => l.spk === s.id));
   function renderCheck() {
     const todo = unchecked();
     $("#chkBox").classList.toggle("hide", !todo.length && !checking && !chkNote);
@@ -255,7 +272,11 @@
     chkNote = "";
     $("#jobEnd").textContent = "";
     try {
-      await api("/api/transcribe", { ...runOpts(), speakers: unchecked().map((s) => s.id), check: true });
+      await api("/api/transcribe", {
+        ...runOpts(),
+        speakers: unchecked().map((s) => s.id),
+        check: true,
+      });
       poll();
     } catch (e) {
       chkNote = e.message;
@@ -263,7 +284,9 @@
     }
   };
   $("#go").onclick = async () => {
-    const ids = [...document.querySelectorAll("[data-pick]")].filter((c) => c.checked).map((c) => c.dataset.pick);
+    const ids = [...document.querySelectorAll("[data-pick]")]
+      .filter((c) => c.checked)
+      .map((c) => c.dataset.pick);
     if (!ids.length) {
       $("#goHint").textContent = S.speakers.length
         ? "Tick at least one person first."
@@ -293,7 +316,9 @@
     await refresh();
     const sp = spk(spk_id),
       mid = (l) => (l.start + l.end) / 2,
-      edited = S.lines.filter((l) => l.spk === spk_id && l.edited && mid(l) >= start && mid(l) <= end).length;
+      edited = S.lines.filter(
+        (l) => l.spk === spk_id && l.edited && mid(l) >= start && mid(l) <= end,
+      ).length;
     if (
       edited &&
       !confirm(
@@ -310,7 +335,11 @@
     }
   }
   function againBtn(spk_id, start, end) {
-    const b = el("button", { class: "again", onclick: () => again(spk_id, start, end) }, "transcribe this part again");
+    const b = el(
+      "button",
+      { class: "again", onclick: () => again(spk_id, start, end) },
+      "transcribe this part again",
+    );
     b.disabled = busy;
     return b;
   }
@@ -337,11 +366,18 @@
     $("#go").classList.toggle("hide", running);
     $("#stop").classList.toggle("hide", !running);
     $("#stop").disabled = !running;
-    if (running && $("#stop").textContent === "Stopping…" && !j.cancel) $("#stop").textContent = "Stop";
+    if (running && $("#stop").textContent === "Stopping…" && !j.cancel)
+      $("#stop").textContent = "Stop";
     if (running) {
       $("#jobWho").textContent =
-        j.phase === "loading" ? "Getting the model ready…" : `Person ${j.index + 1} of ${j.count}: ${j.who}`;
-      const frac = j.check ? j.index / j.count : j.dur > 0 ? Math.min(1, (j.index + j.pos / j.dur) / j.count) : 0;
+        j.phase === "loading"
+          ? "Getting the model ready…"
+          : `Person ${j.index + 1} of ${j.count}: ${j.who}`;
+      const frac = j.check
+        ? j.index / j.count
+        : j.dur > 0
+          ? Math.min(1, (j.index + j.pos / j.dur) / j.count)
+          : 0;
       $("#jobBar").style.width = `${j.phase === "loading" ? 3 : frac * 100}%`;
       let t = j.message || "";
       if (j.check) {
@@ -384,7 +420,11 @@
               "details",
               {},
               el("summary", {}, "Technical details"),
-              el("pre", {}, `${j.error}\n${j.trace || ""}\nengine python ${S.env.py} cuda=${S.env.cuda}`),
+              el(
+                "pre",
+                {},
+                `${j.error}\n${j.trace || ""}\nengine python ${S.env.py} cuda=${S.env.cuda}`,
+              ),
             ),
           ),
         );
@@ -402,7 +442,9 @@
             "div",
             { class: `box ${j.note ? "warn" : "ok"}` },
             el("b", {}, j.note ? "Not fully checked. " : "Done. "),
-            j.note ? j.note : `Checked in ${fmt(j.seconds)}. Missed speech rows now show in step 3.`,
+            j.note
+              ? j.note
+              : `Checked in ${fmt(j.seconds)}. Missed speech rows now show in step 3.`,
           ),
         );
       else if (j.phase === "done" && j.stretch)
@@ -421,7 +463,11 @@
             { class: "box ok" },
             el("b", {}, "Done. "),
             `Finished in ${fmt(j.seconds)}. Next, check the lines in step 3. Start with "worth a second look", then try the "Thai/English" filter, since mixed Thai and English is where the model slips most. `,
-            el("button", { class: "primary", onclick: () => $("#s3").scrollIntoView() }, "Go to step 3 ›"),
+            el(
+              "button",
+              { class: "primary", onclick: () => $("#s3").scrollIntoView() },
+              "Go to step 3 ›",
+            ),
           ),
         );
       picks.clear();
@@ -452,16 +498,27 @@
     const f = $("#filter").value;
     return S.lines.filter(
       (l) =>
-        f === "all" || (f === "todo" && !l.ok) || (f === "check" && !l.ok && l.unsure) || (f === "mixed" && l.mixed),
+        f === "all" ||
+        (f === "todo" && !l.ok) ||
+        (f === "check" && !l.ok && l.unsure) ||
+        (f === "mixed" && l.mixed),
     );
   }
   const rows = () =>
     S.speakers.flatMap((s) =>
-      (s.missed || []).map((m) => ({ row: true, id: `m${s.id}-${m.start}`, spk: s.id, start: m.start, end: m.end })),
+      (s.missed || []).map((m) => ({
+        row: true,
+        id: `m${s.id}-${m.start}`,
+        spk: s.id,
+        start: m.start,
+        end: m.end,
+      })),
     );
   function shown() {
     const ls = visible();
-    return $("#filter").value === "mixed" ? ls : [...ls, ...rows()].sort((a, b) => a.start - b.start);
+    return $("#filter").value === "mixed"
+      ? ls
+      : [...ls, ...rows()].sort((a, b) => a.start - b.start);
   }
   function nextCheck(id) {
     const v = shown(),
@@ -577,7 +634,9 @@
         why = el(
           "span",
           { class: "why" },
-          l.reasons.map((r) => (r === "unsure word" ? `unsure word: ${w.slice(0, 3).join(", ")}${n}` : r)).join(" · "),
+          l.reasons
+            .map((r) => (r === "unsure word" ? `unsure word: ${w.slice(0, 3).join(", ")}${n}` : r))
+            .join(" · "),
         );
         tags.append(el("span", { class: "tag low" }, "unsure"), why);
       }
@@ -697,7 +756,9 @@
       }
     }
     if (ch.length) await api("/api/lines", { updates: ch });
-    $("#replMsg").textContent = ch.length ? `Changed ${ch.length} line${ch.length > 1 ? "s" : ""}` : "Nothing found";
+    $("#replMsg").textContent = ch.length
+      ? `Changed ${ch.length} line${ch.length > 1 ? "s" : ""}`
+      : "Nothing found";
     renderLines();
   };
 
@@ -720,7 +781,9 @@
         player
           .play()
           .catch((e) =>
-            alert(`The browser could not play this audio: ${e.message}\nTry converting the file to WAV or MP3.`),
+            alert(
+              `The browser could not play this audio: ${e.message}\nTry converting the file to WAV or MP3.`,
+            ),
           );
         clearInterval(watch);
         watch = setInterval(check, 40);
@@ -746,7 +809,9 @@
         i = v.findIndex((x) => x.id === r.id);
       if ($("#auto").checked && !r.row && v[i + 1]) {
         playLine(v[i + 1].id);
-        document.querySelector(`[data-id="${v[i + 1].id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+        document
+          .querySelector(`[data-id="${v[i + 1].id}"]`)
+          ?.scrollIntoView({ block: "center", behavior: "smooth" });
       } else halt();
     }
   }
@@ -782,7 +847,8 @@
   async function refresh() {
     await flush();
     S = await api("/api/state");
-    for (const sp of S.speakers) if (S.lines.some((l) => l.spk === sp.id) && !picks.has(sp.id)) picks.set(sp.id, false); // already has a transcript: do not redo by default
+    for (const sp of S.speakers)
+      if (S.lines.some((l) => l.spk === sp.id) && !picks.has(sp.id)) picks.set(sp.id, false); // already has a transcript: do not redo by default
     picks.forEach((_, k) => {
       if (!S.speakers.some((s) => s.id === k)) picks.delete(k);
     });

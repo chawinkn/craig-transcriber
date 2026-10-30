@@ -17,7 +17,11 @@ def add_nvidia_dll_dirs():
         import importlib.util
 
         spec = importlib.util.find_spec("nvidia")
-        bases = list(spec.submodule_search_locations) if spec and spec.submodule_search_locations else []
+        bases = (
+            list(spec.submodule_search_locations)
+            if spec and spec.submodule_search_locations
+            else []
+        )
     except Exception:
         return
     for base in bases:
@@ -66,7 +70,12 @@ MODELS = [
     },
 ]
 THAI_MODELS = {m["name"]: m["repo"] for m in MODELS if "repo" in m}
-MODEL_FILES = ("model.bin", "config.json", "tokenizer.json", "preprocessor_config.json")  # what faster-whisper reads
+MODEL_FILES = (
+    "model.bin",
+    "config.json",
+    "tokenizer.json",
+    "preprocessor_config.json",
+)  # what faster-whisper reads
 
 
 def model_dir(data_dir, name):
@@ -76,14 +85,26 @@ def model_dir(data_dir, name):
 def thai_model_state(data_dir, name):
     """("installed" | "incomplete" | "missing", the files that are missing)."""
     missing = [f for f in MODEL_FILES if not (model_dir(data_dir, name) / f).exists()]
-    return ("installed" if not missing else "missing" if len(missing) == len(MODEL_FILES) else "incomplete"), missing
+    return (
+        "installed"
+        if not missing
+        else "missing"
+        if len(missing) == len(MODEL_FILES)
+        else "incomplete"
+    ), missing
 
 
 def model_catalog(data_dir):
-    """Every model the app offers; a Thai model also has "state": installed, incomplete or missing."""
+    """Every model the app offers; a Thai model also has "state": installed, incomplete or
+    missing."""
     out = []
     for m in MODELS:
-        entry = {"name": m["name"], "label": m["label"], "thai": "repo" in m, "slow": bool(m.get("slow"))}
+        entry = {
+            "name": m["name"],
+            "label": m["label"],
+            "thai": "repo" in m,
+            "slow": bool(m.get("slow")),
+        }
         if m.get("default"):
             entry["default"] = m["default"]
         if entry["thai"]:
@@ -106,13 +127,15 @@ DECODE = dict(
 # Pauses of 0.6 s keep Thai Lines under 12 s.
 LINE_GAP, LINE_MAX = 0.6, 12.0
 
-# PONYTAIL: the part is cut out of the audio, not given as clip_timestamps, because faster-whisper ignores vad_filter
-# when clip_timestamps is set, and VAD is what keeps silence from becoming made-up text.
+# PONYTAIL: the part is cut out of the audio, not given as clip_timestamps, because
+# faster-whisper ignores vad_filter when clip_timestamps is set, and VAD is what keeps silence
+# from becoming made-up text.
 CLIP_PAD = 1.0
 
 
 def _starts_word(words, j):
-    """Thai "words" are token pieces: a piece starts a word after a space, or where Latin follows non-Latin."""
+    """Thai "words" are token pieces: a piece starts a word after a space, or where Latin follows
+    non-Latin."""
     text, prev = words[j]["text"], words[j - 1]["text"]
 
     def latin(ch):
@@ -121,18 +144,22 @@ def _starts_word(words, j):
     return text[:1].isspace() or (latin(text[:1]) and not latin(prev[-1:]))
 
 
-_THAI_FOLLOWING = re.compile(r"[\u0e30-\u0e3a\u0e45\u0e47-\u0e4e]")  # vowels and marks written after a consonant
+_THAI_FOLLOWING = re.compile(
+    r"[\u0e30-\u0e3a\u0e45\u0e47-\u0e4e]"
+)  # vowels and marks written after a consonant
 _THAI_LEADING = re.compile(r"[\u0e40-\u0e44]")  # vowels written before it
 
 
 def _splits_syllable(words, c):
-    return bool(_THAI_FOLLOWING.match(words[c]["text"]) or _THAI_LEADING.match(words[c - 1]["text"][-1:]))
+    return bool(
+        _THAI_FOLLOWING.match(words[c]["text"]) or _THAI_LEADING.match(words[c - 1]["text"][-1:])
+    )
 
 
 def _cut(words, lo, i, floor):
-    """Index where a Line after the pause before words[i] begins: back to a word start within 3 pieces,
-    else back past any split Thai syllable, but not below floor. The first piece of a word is often
-    timed before the pause."""
+    """Index where a Line after the pause before words[i] begins: back to a word start within 3
+    pieces, else back past any split Thai syllable, but not below floor. The first piece of a word
+    is often timed before the pause."""
     c = next((j for j in range(i, max(lo, i - 3), -1) if _starts_word(words, j)), None)
     if c is None:
         c = i
@@ -146,16 +173,21 @@ def _cap(words, lo, hi, start, end):
         return [(lo, hi, start, end)]
     i = max(range(lo + 1, hi), key=lambda k: words[k]["start"] - words[k - 1]["end"])
     c = _cut(words, lo, i, lo + 1)
-    return _cap(words, lo, c, start, words[c - 1]["end"]) + _cap(words, c, hi, words[i]["start"], end)
+    return _cap(words, lo, c, start, words[c - 1]["end"]) + _cap(
+        words, c, hi, words[i]["start"], end
+    )
 
 
 def _spans(words):
-    """(first, past-last, start, end) per Line, splitting at pauses of LINE_GAP and capping at LINE_MAX."""
+    """(first, past-last, start, end) per Line, splitting at pauses of LINE_GAP and capping at
+    LINE_MAX."""
     spans, lo, start = [], 0, words[0]["start"]
     for i in range(1, len(words)):
         if words[i]["start"] - words[i - 1]["end"] >= LINE_GAP:
             c = _cut(words, lo, i, lo)
-            if c > lo:  # else the whole previous stretch was a stray syllable piece: it joins this Line
+            if (
+                c > lo
+            ):  # else the whole previous stretch was a stray syllable piece: it joins this Line
                 spans.append((lo, c, start, words[c - 1]["end"]))
             lo, start = c, words[i]["start"]
     spans.append((lo, len(words), start, words[-1]["end"]))
@@ -173,10 +205,11 @@ def _line(start, end, text, conf, words):
 
 
 def _join_fragments(lines):
-    """Join Lines that were cut inside a word: a Line starting with a Thai vowel or mark that cannot start a word,
-    or after one ending in a vowel written before its consonant. Also join a run of tiny Lines (3 characters or
-    fewer, under LINE_GAP apart) with the Line after it. Some models emit a segment per piece, which reads as one
-    character per Line. A joined Line stays within LINE_MAX."""
+    """Join Lines that were cut inside a word: a Line starting with a Thai vowel or mark that
+    cannot start a word, or after one ending in a vowel written before its consonant. Also join a
+    run of tiny Lines (3 characters or fewer, under LINE_GAP apart) with the Line after it. Some
+    models emit a segment per piece, which reads as one character per Line. A joined Line stays
+    within LINE_MAX."""
 
     def tiny(ln):
         return len(re.sub(r"\s+", "", ln["text"])) <= 3
@@ -208,7 +241,10 @@ def _merged(parts):
     for p in parts[1:]:
         text += (
             " "
-            if text[-1:].isascii() and text[-1:].isalnum() and p["text"][:1].isascii() and p["text"][:1].isalnum()
+            if text[-1:].isascii()
+            and text[-1:].isalnum()
+            and p["text"][:1].isascii()
+            and p["text"][:1].isalnum()
             else ""
         ) + p["text"]
     confs = [p["conf"] for p in parts if p["conf"] is not None]
@@ -222,7 +258,8 @@ def _merged(parts):
 
 
 def lines_from_segments(segments):
-    """Yield Lines from engine segments: drop silence and empty text, split long segments at pauses."""
+    """Yield Lines from engine segments: drop silence and empty text, split long segments at
+    pauses."""
     return _join_fragments(_split_segments(segments))
 
 
@@ -264,20 +301,30 @@ class WhisperEngine:
     def _load(self, prefer_cpu):
         from faster_whisper import WhisperModel
 
-        tries = [("cuda", "float16"), ("cuda", "int8_float16")] if not prefer_cpu and cuda_count() > 0 else []
+        tries = (
+            [("cuda", "float16"), ("cuda", "int8_float16")]
+            if not prefer_cpu and cuda_count() > 0
+            else []
+        )
         last = None
         for device, ctype in tries + [("cpu", "int8")]:
             try:
                 self.on_status(
-                    message=f"Loading the model on the {'graphics card' if device == 'cuda' else 'processor'}. "
-                    "The first time, it is downloaded (up to a few GB); progress shows in the terminal window."
+                    message=(
+                        "Loading the model on the "
+                        f"{'graphics card' if device == 'cuda' else 'processor'}. "
+                        "The first time, it is downloaded (up to a few GB); "
+                        "progress shows in the terminal window."
+                    )
                 )
                 self._model = WhisperModel(self.model_name, device=device, compute_type=ctype)
                 self.device = device
                 return
             except Exception as e:
                 last = e
-                self.on_status(note=f"Could not use the {device} ({str(e)[:160]}). Trying the next option.")
+                self.on_status(
+                    note=f"Could not use the {device} ({str(e)[:160]}). Trying the next option."
+                )
         raise last
 
     def use_cpu(self):
@@ -303,16 +350,20 @@ class WhisperEngine:
         return np.concatenate(chunks).astype(np.float32) / 32768.0
 
     def transcribe(self, audio_path, language, prompt, clip=None):
-        """(duration in seconds of the whole audio, iterator of {start, end, text, conf, no_speech, words}). Sets
-        self.language. With clip=(start, end) only that part, padded CLIP_PAD each side, is transcribed; times stay
-        in the whole audio's time."""
+        """(duration in seconds of the whole audio, iterator of {start, end, text, conf, no_speech,
+        words}). Sets self.language. With clip=(start, end) only that part, padded CLIP_PAD each
+        side, is transcribed; times stay in the whole audio's time."""
         audio = self.load_audio(audio_path)
         total, lo = len(audio) / 16000.0, 0.0
         if clip:
             lo = max(0.0, clip[0] - CLIP_PAD)
             audio = audio[int(lo * 16000) : int(min(total, clip[1] + CLIP_PAD) * 16000)]
         segments, info = self._model.transcribe(
-            audio, language=language or None, initial_prompt=prompt or None, hotwords=prompt or None, **DECODE
+            audio,
+            language=language or None,
+            initial_prompt=prompt or None,
+            hotwords=prompt or None,
+            **DECODE,
         )
         self.language = getattr(info, "language", "")
         return total, (
@@ -336,7 +387,8 @@ class WhisperEngine:
         )
 
     def voice(self, audio_path):
-        """[[start, end], ...] seconds where there is voice, from the same VAD and silence length as decoding."""
+        """[[start, end], ...] seconds where there is voice, from the same VAD and silence length
+        as decoding."""
         from faster_whisper.vad import VadOptions, get_speech_timestamps
 
         stamps = get_speech_timestamps(
@@ -347,7 +399,8 @@ class WhisperEngine:
 
 
 def _engine_worker(conn, inner, model_name, prefer_cpu):
-    """Child process: own the inner engine and answer transcribe requests, streaming segments back."""
+    """Child process: own the inner engine and answer transcribe requests, streaming segments
+    back."""
     add_nvidia_dll_dirs()
     try:
         engine = inner(model_name, prefer_cpu, lambda **kw: conn.send(("status", kw)))
@@ -391,8 +444,9 @@ class EngineCrashed(RuntimeError):
 
 
 class ProcessEngine:
-    """The engine interface with INNER running in a child process, so a native crash there (a CUDA abort)
-    becomes an error here instead of killing the server. The child, and its loaded model, lives as long as this."""
+    """The engine interface with INNER running in a child process, so a native crash there (a CUDA
+    abort) becomes an error here instead of killing the server. The child, and its loaded model,
+    lives as long as this."""
 
     INNER = WhisperEngine
 
@@ -401,21 +455,31 @@ class ProcessEngine:
         return cls.INNER.available()
 
     def __init__(self, model_name, prefer_cpu, on_status):
-        self.model_name, self.on_status, self.language, self.device = model_name, on_status, "", None
+        self.model_name, self.on_status, self.language, self.device = (
+            model_name,
+            on_status,
+            "",
+            None,
+        )
         try:
             self._start(prefer_cpu)
         except EngineCrashed:
             if prefer_cpu:
                 raise
             self._stop()
-            on_status(note="The graphics card crashed while loading the model. Trying the processor, which is slower.")
+            on_status(
+                note="The graphics card crashed while loading the model. "
+                "Trying the processor, which is slower."
+            )
             self._start(True)
 
     def _start(self, prefer_cpu):
         ctx = multiprocessing.get_context("spawn")
         self._conn, child = ctx.Pipe()
         self._proc = ctx.Process(
-            target=_engine_worker, args=(child, self.INNER, self.model_name, prefer_cpu), daemon=True
+            target=_engine_worker,
+            args=(child, self.INNER, self.model_name, prefer_cpu),
+            daemon=True,
         )
         self._proc.start()
         child.close()
@@ -433,7 +497,8 @@ class ProcessEngine:
             except (EOFError, OSError):
                 self._proc.join(5)
                 raise EngineCrashed(
-                    f"the transcription process stopped unexpectedly (exit code {self._proc.exitcode})"
+                    "the transcription process stopped unexpectedly "
+                    f"(exit code {self._proc.exitcode})"
                 ) from None
             if kind != "status":
                 return kind, rest
@@ -460,8 +525,8 @@ class ProcessEngine:
 
 
 class _SegmentStream:
-    """Segments from the child. close() before the end (a cancel) stops the child's run and reads up to its end,
-    so the pipe is clean for the next run, even if no segment was read yet."""
+    """Segments from the child. close() before the end (a cancel) stops the child's run and reads
+    up to its end, so the pipe is clean for the next run, even if no segment was read yet."""
 
     def __init__(self, engine):
         self._engine, self._open = engine, True
@@ -500,7 +565,9 @@ class RunOptions:
     prefer_cpu: bool
     prompt: str
     check: bool = False  # only find where there is voice, nothing is transcribed
-    stretch: "tuple | None" = None  # (start, end) seconds of one Speaker to transcribe again, nothing else changes
+    stretch: "tuple | None" = (
+        None  # (start, end) seconds of one Speaker to transcribe again, nothing else changes
+    )
 
 
 class Job:
@@ -557,7 +624,10 @@ class Job:
                     or not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in t)
                     or not 0 <= t[0] < t[1]
                 ):
-                    return {"error": "A part can only be transcribed again for one person, with a start and an end"}
+                    return {
+                        "error": "A part can only be transcribed again for one person, "
+                        "with a start and an end"
+                    }
                 stretch = (float(t[0]), float(t[1]))
             model = source = opts.get("model") or "small"
             if model in THAI_MODELS:
@@ -650,7 +720,9 @@ class Job:
                         break
                     except Exception as e:
                         if isinstance(e, EngineCrashed):
-                            self._engine = self._engine_key = None  # its process is gone; never reuse it
+                            self._engine = self._engine_key = (
+                                None  # its process is gone; never reuse it
+                            )
                         if engine.device == "cuda" and attempt == 0 and not self._cancelled:
                             self._set(
                                 note=f"The graphics card failed while working ({str(e)[:160]}). "
@@ -663,10 +735,16 @@ class Job:
                             continue
                         raise
             self._set(
-                phase="cancelled" if self._cancelled else "done", message="", seconds=round(time.time() - t_start)
+                phase="cancelled" if self._cancelled else "done",
+                message="",
+                seconds=round(time.time() - t_start),
             )
         except Exception as e:
-            self._set(phase="error", error=f"{type(e).__name__}: {e}", trace=traceback.format_exc()[-1500:])
+            self._set(
+                phase="error",
+                error=f"{type(e).__name__}: {e}",
+                trace=traceback.format_exc()[-1500:],
+            )
         finally:
             self._set(running=False)
 
@@ -704,9 +782,9 @@ class Job:
             self._set(pos=min(max(float(line["end"]) - t0, 0.0), dur))
             kept.append(line)
             with self._lock:
-                self._st["recent"] = (self._st["recent"] + [f"{name} [{project.hms(line['start'])}] {line['text']}"])[
-                    -4:
-                ]
+                self._st["recent"] = (
+                    self._st["recent"] + [f"{name} [{project.hms(line['start'])}] {line['text']}"]
+                )[-4:]
         if run.stretch and not self._cancelled:
             self.project.replace_stretch(sid, *run.stretch, kept)
             return dur
@@ -725,7 +803,8 @@ class Job:
         return dur
 
     def _voice(self, engine, name, path):
-        """Where there is voice; None when it could not be found, which must not lose a finished transcription."""
+        """Where there is voice; None when it could not be found, which must not lose a finished
+        transcription."""
         self._set(message=f"Finding where {name} speaks…")
         try:
             return engine.voice(path)
@@ -733,5 +812,6 @@ class Job:
             raise
         except Exception as e:
             self._set(
-                note=f"Could not find where {name} speaks ({str(e)[:160]}), so Missed speech is not shown for them."
+                note=f"Could not find where {name} speaks ({str(e)[:160]}), "
+                "so Missed speech is not shown for them."
             )
