@@ -79,12 +79,12 @@ def model_catalog(data_dir):
     return out
 
 
-# No hallucination_silence_threshold: on noisy Thai audio it dropped ~70% of real speech (#4).
-# PONYTAIL: no_repeat_ngram_size=10 measured on two one-minute clips only; retune with more recordings.
+# No hallucination_silence_threshold: on noisy Thai audio it drops most of the real speech.
+# PONYTAIL: no_repeat_ngram_size=10 rests on very little audio; retune with more recordings.
 DECODE = dict(beam_size=5, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500),
               condition_on_previous_text=False, word_timestamps=True, no_repeat_ngram_size=10)
 
-# Measured on one-minute Thai clips: pauses of 0.6 s keep every Line under 12 s.
+# Pauses of 0.6 s keep Thai Lines under 12 s.
 LINE_GAP, LINE_MAX = 0.6, 12.0
 
 # PONYTAIL: the part is cut out of the audio, not given as clip_timestamps, because faster-whisper ignores vad_filter

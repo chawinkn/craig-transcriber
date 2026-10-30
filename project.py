@@ -24,8 +24,7 @@ def srt_time(t):
     return f"{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}:{ms % 60000 // 1000:02d},{ms % 1000:03d}"
 
 
-# Measured (#29) on 219 reviewed Lines of a 33-min Thai meeting, Pathumma: the lowest word probability in a Line was
-# the best of the scores tried; under 0.3 tags 12% of Lines and catches 6 of 17 wrong ones (0 of 17 before).
+# The lowest word probability is the best sign of a wrong Line; under 0.3 tags about one Line in eight on Thai meetings.
 UNSURE_WORD_PROB = 0.3
 
 
@@ -47,7 +46,7 @@ def unsure_spans(text, words):
 
 
 LINE_MAX_CPS = 30.0  # faster than anyone speaks
-MISSED_MIN_SECONDS, MISSED_MAX_CPS = 4.0, 2.0  # on the 2026-10-29 recording: 3 Lines, all real dropped speech
+MISSED_MIN_SECONDS, MISSED_MAX_CPS = 4.0, 2.0  # a Line this long and this empty has swallowed speech
 
 
 def repeats(text):
