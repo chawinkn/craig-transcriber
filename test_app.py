@@ -13,7 +13,7 @@ from pathlib import Path
 
 from project import Project
 import convert_model
-from transcribe import CLIP_PAD, MODEL_FILES, EngineCrashed, Job, ProcessEngine, WhisperEngine, lines_from_segments, looks_hallucinated, model_catalog
+from transcribe import CLIP_PAD, MODEL_FILES, EngineCrashed, Job, ProcessEngine, WhisperEngine, lines_from_segments, model_catalog
 
 
 def wav(seconds=0.2):
@@ -206,7 +206,7 @@ class ProjectTest(unittest.TestCase):
     def test_every_line_carries_its_review_flags(self):
         upload(self.p, "1-a.wav", wav())
         sid = self.p.state()["speakers"][0]["id"]
-        self.p.replace_lines(sid, [seg(0, "สวัสดีครับ"), seg(1, "ฟังไม่ชัด", conf=-1.2), {**seg(2, "อีเขียบ อีเขียบ อีเขียบ"), "suspect": True},
+        self.p.replace_lines(sid, [seg(0, "สวัสดีครับ"), seg(1, "ฟังไม่ชัด", conf=-1.2), seg(2, "อีเขียบ อีเขียบ อีเขียบ"),
                                    seg(3, "Essential Principal เลยนะเว้ย"), seg(4, "OK นะ"), seg(5, "แก้ทีหลัง")])
         ids = {l["text"]: l["id"] for l in self.p.state()["lines"]}
         self.p.edit_lines([{"id": ids["อีเขียบ อีเขียบ อีเขียบ"], "text": "อีกแล้ว"}, {"id": ids["แก้ทีหลัง"], "text": "แก้แล้ว"}])
@@ -243,19 +243,19 @@ class ProjectTest(unittest.TestCase):
 
     def test_each_cause_gives_its_own_reason(self):
         got = self.saved(("fine words", dict(length=2.0, words=[pw(" fine"), pw(" words", 0.1)])),
-                         ("อีเขียบ" * 4, dict(suspect=True)),
-                         ("สวัสดี こんにちは", dict(suspect=True)),
-                         ("สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก", dict(suspect=True, length=1.0)),
-                         ("old", dict(suspect=True, length=2.0)),
+                         ("อีเขียบ" * 4, dict()),
+                         ("สวัสดี こんにちは", dict()),
+                         ("สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก", dict(length=1.0)),
+                         ("old flag", dict(suspect=True, length=2.0)),
                          ("fine", dict(length=2.0)))
         self.assertEqual({t: (l["reasons"], l["unsure"]) for t, l in got.items()},
                          {"fine words": (["unsure word"], True), "อีเขียบ" * 4: (["repeated phrase"], True),
                           "สวัสดี こんにちは": (["foreign letters"], True), "สวัสดีครับผมชื่อสมชายยินดีที่ได้รู้จัก": (["timing"], True),
-                          "old": (["looks made up"], True), "fine": ([], False)})
+                          "old flag": ([], False), "fine": ([], False)})
 
     def test_several_reasons_come_in_the_stated_order(self):
         text = "x こんにちは" + "ก" * 40
-        got = self.saved((text, dict(suspect=True, length=1.0, words=[pw("x", 0.1), pw(" " + text[2:])])))
+        got = self.saved((text, dict(length=1.0, words=[pw("x", 0.1), pw(" " + text[2:])])))
         self.assertEqual(got[text]["reasons"], ["unsure word", "repeated phrase", "foreign letters", "timing"])
 
     def test_long_line_with_far_too_little_text_is_missed_speech(self):
@@ -275,13 +275,13 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual((line["unsure"], line["reasons"]), (False, []))
 
     def test_missed_speech_comes_after_the_other_reasons_and_editing_clears_it(self):
-        got = self.saved(("x", dict(suspect=True, length=10.0, words=[pw("x", 0.1)])), ("าง", dict(length=14.0)))
-        self.assertEqual(got["x"]["reasons"], ["unsure word", "looks made up", "missed speech"])
+        got = self.saved(("x こんにちは", dict(length=10.0, words=[pw("x", 0.1), pw(" こんにちは")])), ("าง", dict(length=14.0)))
+        self.assertEqual(got["x こんにちは"]["reasons"], ["unsure word", "foreign letters", "missed speech"])
         self.p.edit_lines([{"id": l["id"], "text": t + " แก้"} for t, l in got.items()])
         self.assertEqual([l["reasons"] for l in self.p.state()["lines"]], [[], []])
 
     def test_editing_clears_unsure_reasons_and_underlines(self):
-        got = self.saved(("a b", dict(words=[pw(" a", 0.1), pw(" b")])), ("こんにちは", dict(suspect=True)), ("hello", dict(conf=-1.2)))
+        got = self.saved(("a b", dict(words=[pw(" a", 0.1), pw(" b")])), ("こんにちは", dict()), ("hello", dict(conf=-1.2)))
         self.p.edit_lines([{"id": l["id"], "text": t + " แก้"} for t, l in got.items()])
         for l in Project(self.dir).state()["lines"]:
             self.assertEqual((l["unsure"], l["reasons"], l["unsure_words"]), (False, [], []), l["text"])
@@ -351,19 +351,32 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(Project(self.dir).state()["lines"], [])
 
 
+def judged(*lines):
+    """Save Lines (dicts with start, end, text) for one Speaker and read them back through Project.state()."""
+    with tempfile.TemporaryDirectory() as d:
+        p = Project(Path(d) / "work")
+        upload(p, "1-a.wav", wav())
+        p.replace_lines(p.state()["speakers"][0]["id"], [{"conf": -0.1, **l} for l in lines])
+        return p.state()["lines"]
+
+
+def made_up(text):
+    return {"repeated phrase", "foreign letters"} & set(judged({"start": 0.0, "end": 3.0, "text": text})[0]["reasons"])
+
+
 class HallucinationRuleTest(unittest.TestCase):
     def test_flags_repeats_and_foreign_scripts(self):
         for text in ["แก ร ั ติ เลย อี เข ีย บ อี เข ีย บ อี เข ีย บ อี เข ีย บ ไม่ ทัน พอ เล่น", "อีเขียบ อีเขียบ อีเขียบ อีเขียบ",
                      "กี่หน้ากี่หน้ากี่หน้ากี่หน้า",
                      "además habíaон", "складดิงตรงนี้", "เออ ตอนนี้一點ก็เดี๋ยว", "Mike is cursing too, Γειά"]:
-            self.assertTrue(looks_hallucinated(text), text)
+            self.assertTrue(made_up(text), text)
 
     def test_keeps_normal_thai_english_and_mixed(self):
         for text in ["เรียนแพทย์ดีกว่า", "No Way", "KMIT Open Courtware", "Essential Principal เลยนะเว้ย",
                      "อ่า ฮ่า ฮ่า ฮ่า", "เล่นๆ ตอนข้าง ตรงชีพหว่ะ", "เสียไป ๆ บางเมื่อ ๆ ๆ เยอะ ๆ", "เล่มละพัน 1,000 บาท?",
                      "Sami in år 2000", "Tiếng Việt", "นะนะนะนะนะ", "ไม่ไม่ไม่ไม่", "ฮ่าฮ่าฮ่าฮ่า", "ha ha ha ha",
                      "555555555", "1000000000", "กี่หน้ากี่หน้ากี่หน้า", "อีเขียบ อีเขียบ อีเขียบ"]:
-            self.assertFalse(looks_hallucinated(text), text)
+            self.assertFalse(made_up(text), text)
 
 
 def w(text, start, end, prob=0.9):
@@ -468,16 +481,16 @@ class LinesFromSegmentsTest(unittest.TestCase):
                          [("w0", "w14", 0.0, 8.2), ("w15", "w29", 8.6, 16.8)])
 
     def test_impossibly_fast_line_is_flagged_not_dropped(self):
-        out = list(lines_from_segments([{**seg(57.2, "สินค้า คงเหลือ สิบเอ็ด บาท"), "end": 57.8},
-                                        {**seg(60.0, "เออ แพงจังอะ"), "end": 61.0}]))
-        self.assertEqual([(l["text"], l["suspect"]) for l in out],
-                         [("สินค้า คงเหลือ สิบเอ็ด บาท", True), ("เออ แพงจังอะ", False)])
+        out = judged(*lines_from_segments([{**seg(57.2, "สินค้า คงเหลือ สิบเอ็ด บาท"), "end": 57.8},
+                                           {**seg(60.0, "เออ แพงจังอะ"), "end": 61.0}]))
+        self.assertEqual([(l["text"], l["reasons"]) for l in out],
+                         [("สินค้า คงเหลือ สิบเอ็ด บาท", ["timing"]), ("เออ แพงจังอะ", [])])
 
     def test_repeat_needs_four_in_a_row_and_short_lines_are_never_too_fast(self):
-        out = list(lines_from_segments([{**seg(0, "กี่หน้ากี่หน้ากี่หน้า"), "end": 3.0}, {**seg(3, "กี่หน้ากี่หน้ากี่หน้ากี่หน้า"), "end": 6.0},
+        out = judged(*lines_from_segments([{**seg(0, "กี่หน้ากี่หน้ากี่หน้า"), "end": 3.0}, {**seg(3, "กี่หน้ากี่หน้ากี่หน้ากี่หน้า"), "end": 6.0},
                                         {**seg(6, "ขอบคุณครับ"), "end": 6.1}, {**seg(7, "ขอบคุณครับขอบคุณครับ"), "end": 7.5},
                                         {**seg(9, "สวัสดีครับ ผมชื่อสมชาย"), "end": 9.5}, {**seg(10, "Gamma Γειά"), "end": 12.0}]))
-        self.assertEqual([l["suspect"] for l in out], [False, True, False, True, True, True])
+        self.assertEqual([l["unsure"] for l in out], [False, True, False, True, True, True])
 
     def test_split_lines_get_their_own_confidence(self):
         words = [w(" ดี", 0.0, 0.4, 0.9), w(" มาก", 0.4, 0.8, 0.9), w(" xq", 3.0, 3.4, 0.05)]
@@ -955,8 +968,8 @@ class JobTest(unittest.TestCase):
             segments = [seg(0, "สวัสดี"), seg(1, "อีเขียบ อีเขียบ อีเขียบ อีเขียบ"), seg(2, "además habíaон")]
         self.run_job(Noisy)
         lines = Project(self.p.dir).state()["lines"]
-        self.assertEqual([(l["text"], l["suspect"]) for l in lines],
-                         [("สวัสดี", False), ("อีเขียบ อีเขียบ อีเขียบ อีเขียบ", True), ("además habíaон", True)])
+        self.assertEqual([(l["text"], l["reasons"]) for l in lines],
+                         [("สวัสดี", []), ("อีเขียบ อีเขียบ อีเขียบ อีเขียบ", ["repeated phrase"]), ("además habíaон", ["foreign letters"])])
 
     def test_failed_or_cancelled_run_keeps_previous_record(self):
         self.run_job(FakeEngine, language="th")

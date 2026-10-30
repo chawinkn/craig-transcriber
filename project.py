@@ -24,8 +24,7 @@ def srt_time(t):
     return f"{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}:{ms % 60000 // 1000:02d},{ms % 1000:03d}"
 
 
-# Measured (#29) on 219 reviewed Lines of a 33-min Thai meeting, Pathumma: the lowest word probability in a Line was
-# the best of the scores tried; under 0.3 tags 12% of Lines and catches 6 of 17 wrong ones (0 of 17 before).
+# The lowest word probability is the best sign of a wrong Line; under 0.3 tags about one Line in eight on Thai meetings.
 UNSURE_WORD_PROB = 0.3
 
 
@@ -47,7 +46,7 @@ def unsure_spans(text, words):
 
 
 LINE_MAX_CPS = 30.0  # faster than anyone speaks
-MISSED_MIN_SECONDS, MISSED_MAX_CPS = 4.0, 2.0  # on the 2026-10-29 recording: 3 Lines, all real dropped speech
+MISSED_MIN_SECONDS, MISSED_MAX_CPS = 4.0, 2.0  # a Line this long and this empty has swallowed speech
 
 
 def repeats(text):
@@ -72,10 +71,10 @@ def too_slow(text, start, end):
 
 def review_flags(line):
     """reasons: why the Line is unsure, in a fixed order; empty once the text differs from what the model wrote
-    (edited, which includes Lines typed in by hand). The made-up causes are worked out again from the text and times,
-    but only for Lines flagged suspect; a flag no rule explains (older runs) reads "looks made up". mixed: Thai with
-    English. unsure_words: character spans in the text. "missed speech" comes last: a Line of 4 s or more with under
-    2 characters per second."""
+    (edited, which includes Lines typed in by hand). Every rule runs on the current text and times, so a rule change
+    applies to old Lines too (a stored "suspect" from older runs is ignored). "missed speech" comes last: a Line of
+    4 s or more with under 2 characters per second. mixed: Thai with English. unsure_words: character spans in the
+    text."""
     text, words = line["text"], line.get("words")
     edited = text != line.get("orig", text)
     spans = [] if edited or not words else unsure_spans(text, words)
@@ -83,11 +82,10 @@ def review_flags(line):
     if not edited:
         if spans:
             reasons.append("unsure word")
-        if line.get("suspect"):
-            causes = [(repeats(text), "repeated phrase"), (foreign_letters(text), "foreign letters"),
-                      (too_fast(text, line.get("start", 0), line.get("end", 0)), "timing")]
-            reasons += [r for hit, r in causes if hit] or ["looks made up"]
-        if text.strip() and too_slow(text, line.get("start", 0), line.get("end", 0)):
+        start, end = line.get("start", 0), line.get("end", 0)
+        reasons += [r for hit, r in [(repeats(text), "repeated phrase"), (foreign_letters(text), "foreign letters"),
+                                     (too_fast(text, start, end), "timing")] if hit]
+        if text.strip() and too_slow(text, start, end):
             reasons.append("missed speech")
     return {"edited": edited, "unsure_words": spans, "reasons": reasons, "unsure": bool(reasons),
             "mixed": bool(re.search(r"[\u0e00-\u0e7f]", text)) and len(re.findall(r"[A-Za-z]", text)) >= 2}
@@ -376,7 +374,6 @@ class Project:
             self._p["lines"].append({"id": self._new_id("l"), "spk": sid, "start": round(float(s["start"]), 2),
                                      "end": round(float(s["end"]), 2), "text": s["text"], "orig": s["text"],
                                      "conf": None if conf is None else round(float(conf), 3), "ok": False,
-                                     "suspect": bool(s.get("suspect")),
                                      "words": [{"text": x["text"], "prob": round(float(x["prob"]), 3)}
                                                for x in s.get("words") or []]})
 
