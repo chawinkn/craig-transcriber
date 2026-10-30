@@ -4,3 +4,9 @@ __pycache__
 CLAUDE.md
 test_*.py
 .venv
+.githooks
+.github
+scripts
+ruff.toml
+biome.json
+requirements-dev.txt
