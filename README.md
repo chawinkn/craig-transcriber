@@ -178,7 +178,7 @@ bash scripts/check.sh --fix [files...]     # format and fix the files (all if no
 git config core.hooksPath .githooks        # run the fix on staged files before every commit
 ```
 
-The pre-commit hook re-stages the files it formats and aborts the commit if a check still fails. CI (GitHub Actions, Python 3.9 and 3.12) runs `scripts/check.sh` and the tests on every push to `main` and every pull request.
+The pre-commit hook re-stages the files it formats and aborts the commit if a check still fails. CI (GitHub Actions, Python 3.9 and 3.12) runs `scripts/check.sh` and the tests on every pull request.
 
 | File | Role |
 |---|---|
