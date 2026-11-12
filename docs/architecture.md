@@ -1,6 +1,6 @@
 # Architecture
 
-Local app that turns a Craig (craig.chat) multi-track recording into a transcript with
+Local app that turns multi-track or single-speaker audio (Craig multi-track Discord zips are one input) into a transcript with
 faster-whisper, then serves a browser UI to listen Line by Line and fix mistakes. Nothing leaves the
 machine. Thai and English (mixed included) come first: the Thai models, Line splitting and joining,
 and the review rules are tuned for them; other languages run through auto-detect, untested.
@@ -8,8 +8,8 @@ Dependencies: stdlib only, plus `faster-whisper` (which pulls in `av` and `numpy
 `GLOSSARY.md`; user-facing changes: `CHANGELOG.md`.
 
 Import direction: `project` <- `transcribe` <- `server` <- `__main__`, no cycles. All of it is the
-`craig_transcriber` package under `src/` (modules import each other with `from . import`); `main()`
-in `__main__.py`, run as `craig-transcriber` or `python -m craig_transcriber`, wires `Project(dir)`,
+`transcribey` package under `src/` (modules import each other with `from . import`); `main()`
+in `__main__.py`, run as `transcribey` or `python -m transcribey`, wires `Project(dir)`,
 `Job(proj)` and `server.make_server(host, port, proj, job)`. Tests are one file per module in
 `tests/` (`test_project.py`, `test_lines.py`, `test_engine.py`, `test_job.py`, `test_server.py`),
 with the shared helpers and fake engines in `tests/helpers.py`. Dependencies,
@@ -52,7 +52,7 @@ see the lock or the dict.
   each Thai model's state from `thai_model_state()`: Installed only when all `MODEL_FILES` exist,
   else incomplete or missing. It is sent to the page in `/api/state` `env.models`.
 - `convert_model.py` is a separate optional module, run as
-  `python -m craig_transcriber.convert_model` (needs the `convert` extra: `ctranslate2`,
+  `python -m transcribey.convert_model` (needs the `convert` extra: `ctranslate2`,
   `transformers`, `torch`) that converts the Thai models into `<data>/models/<name>/`
   (`output_dir()` there uses `transcribe.model_dir()`). It imports `transcribe`; the app never
   imports it.

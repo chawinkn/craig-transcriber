@@ -50,7 +50,7 @@ def make_server(host, port, project, job):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "CraigTranscriber"
+    server_version = "Transcribey"
 
     project = property(lambda self: self.server.project)
     job = property(lambda self: self.server.job)

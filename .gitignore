@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
-craig_work/
+transcribey_work/
 *.egg-info/
 build/
 dist/

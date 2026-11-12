@@ -5,9 +5,9 @@ from pathlib import Path
 
 from helpers import FakeEngine, IsolatedEngine, pw, seg, texts, upload, w, wav
 
-from craig_transcriber import convert_model
-from craig_transcriber.project import Project
-from craig_transcriber.transcribe import (
+from transcribey import convert_model
+from transcribey.project import Project
+from transcribey.transcribe import (
     CLIP_PAD,
     MODEL_FILES,
     Job,
@@ -485,14 +485,14 @@ class JobTest(unittest.TestCase):
 
     def test_thai_model_must_be_installed(self):
         err = Job(self.p, FakeEngine).start({"speakers": [self.sid], "model": "typhoon"})["error"]
-        self.assertIn("python -m craig_transcriber.convert_model typhoon", err)
+        self.assertIn("python -m transcribey.convert_model typhoon", err)
         folder = convert_model.output_dir("typhoon", self.p.dir)
         folder.mkdir(parents=True)
         (folder / "model.bin").write_bytes(b"")
         err = Job(self.p, FakeEngine).start({"speakers": [self.sid], "model": "typhoon"})["error"]
         self.assertIn("incomplete", err)
         self.assertIn("preprocessor_config.json", err)
-        self.assertIn("python -m craig_transcriber.convert_model typhoon", err)
+        self.assertIn("python -m transcribey.convert_model typhoon", err)
         for f in MODEL_FILES:
             (folder / f).write_bytes(b"")
         loaded = []

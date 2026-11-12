@@ -4,8 +4,8 @@ from pathlib import Path
 
 from helpers import pw, seg, upload, w, wav
 
-from craig_transcriber.project import Project
-from craig_transcriber.transcribe import (
+from transcribey.project import Project
+from transcribey.transcribe import (
     lines_from_segments,
 )
 

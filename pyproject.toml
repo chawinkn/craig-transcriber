@@ -3,9 +3,9 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "craig-transcriber"
+name = "transcribey"
 version = "0.6.1"
-description = "Turn a Craig multi-track Discord recording into an accurate, speaker-labelled transcript, entirely on your own computer."
+description = "Turn multi-track or single-speaker audio into an accurate, speaker-labelled, reviewable transcript, entirely on your own computer."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
@@ -17,7 +17,7 @@ convert = ["ctranslate2", "transformers", "torch"]
 dev = ["ruff==0.17.1"]
 
 [project.scripts]
-craig-transcriber = "craig_transcriber.__main__:main"
+transcribey = "transcribey.__main__:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -26,15 +26,15 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-craig_transcriber = ["static/*"]
+transcribey = ["static/*"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py39"
-extend-exclude = [".venv", "craig_work", ".claude"]
+extend-exclude = [".venv", "transcribey_work", ".claude"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["craig_transcriber"]
+known-first-party = ["transcribey"]

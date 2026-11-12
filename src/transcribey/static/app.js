@@ -118,8 +118,8 @@
       h.push(
         "Thai only, so set Language to Thai.",
         {
-          missing: `Not installed yet: run python -m craig_transcriber.convert_model ${v}, then reload this page.`,
-          incomplete: `Incomplete: run python -m craig_transcriber.convert_model ${v} again, then reload this page.`,
+          missing: `Not installed yet: run python -m transcribey.convert_model ${v}, then reload this page.`,
+          incomplete: `Incomplete: run python -m transcribey.convert_model ${v} again, then reload this page.`,
         }[m.state] || "",
       );
     $("#modelHint").textContent = h.join(" ").trim();

@@ -1,4 +1,4 @@
-# craig-transcriber
+# transcribey
 
 ## 0.6.1
 

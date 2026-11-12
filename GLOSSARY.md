@@ -1,6 +1,6 @@
-# Craig Transcriber
+# Transcribey
 
-Turns a multi-track Craig recording into a reviewed, per-speaker transcript, entirely on the user's machine.
+Turns multi-track or single-speaker audio into a reviewed, per-speaker transcript, entirely on the user's machine. Each audio file is one Speaker; Craig multi-track recordings are one input.
 
 ## Language
 

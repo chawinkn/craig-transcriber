@@ -12,4 +12,4 @@ COPY src/ src/
 RUN pip install --no-cache-dir .
 VOLUME /data
 EXPOSE 8765
-CMD ["craig-transcriber", "--host", "0.0.0.0", "--data", "/data/work", "--no-browser"]
+CMD ["transcribey", "--host", "0.0.0.0", "--data", "/data/work", "--no-browser"]

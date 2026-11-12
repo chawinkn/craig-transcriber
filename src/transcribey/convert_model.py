@@ -1,6 +1,6 @@
 """Install a Thai model (or any Hugging Face Whisper model) for faster-whisper.
 
-Run: python -m craig_transcriber.convert_model <model> [--data DIR]
+Run: python -m transcribey.convert_model <model> [--data DIR]
 Needs extra packages the app itself does not: pip install ".[convert]"
 """
 
@@ -19,7 +19,7 @@ def output_dir(model, data):
 
 def main():
     ap = argparse.ArgumentParser(
-        prog="python -m craig_transcriber.convert_model",
+        prog="python -m transcribey.convert_model",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -27,7 +27,7 @@ def main():
         "model", help=f"{' or '.join(THAI_MODELS)}, or any Hugging Face Whisper repo id"
     )
     ap.add_argument(
-        "--data", default="craig_work", help="the same --data folder you give craig-transcriber"
+        "--data", default="transcribey_work", help="the same --data folder you give transcribey"
     )
     args = ap.parse_args()
 
