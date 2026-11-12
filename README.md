@@ -1,8 +1,8 @@
 <div align="center">
 
-# Craig Transcriber
+# Transcribey
 
-**Turn a [Craig](https://craig.chat) multi-track Discord recording into an accurate, speaker-labelled transcript, entirely on your own computer.**
+**Turn multi-track or single-speaker audio into an accurate, speaker-labelled, reviewable transcript, entirely on your own computer.**
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![Whisper](https://img.shields.io/badge/engine-faster--whisper-green)
@@ -15,7 +15,7 @@
 
 ## Overview
 
-[Craig](https://craig.chat) records each person in a Discord call on a separate audio track. Craig Transcriber runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) on each track and merges the results into one transcript in time order. Because every track belongs to one person, each line is labelled with the right speaker, with no diarization guesswork. A browser-based review screen then lets you listen line by line and fix what Whisper got wrong.
+Transcribey runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) on each audio file and merges the results into one transcript in time order. Each audio file is treated as one Speaker, so each line is labelled with the right speaker, with no diarization (guessing who talks in a mixed recording). A browser-based review screen then lets you listen line by line and fix what Whisper got wrong. Multi-track Discord recordings from [Craig](https://craig.chat) are one supported input.
 
 > [!NOTE]
 > Nothing leaves your machine. Audio, transcripts and models all stay local. This project is not affiliated with Craig or OpenAI.
@@ -61,15 +61,18 @@ Prerequisites:
 
 1. Build the image:
    ```bash
-   docker build --build-arg GPU=1 -t craig-transcriber .   # omit --build-arg GPU=1 for CPU only
+   docker build --build-arg GPU=1 -t transcribey .   # omit --build-arg GPU=1 for CPU only
    ```
 2. Run it (drop `--gpus all` on a machine without an NVIDIA GPU):
    ```bash
-   docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v craig_data:/data craig-transcriber
+   docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v transcribey_data:/data transcribey
    ```
 3. Open http://127.0.0.1:8765.
 
-Your work is stored in the `craig_data` volume and survives rebuilds.
+Your work is stored in the `transcribey_data` volume and survives rebuilds.
+
+> [!NOTE]
+> Moving from an older version? Move `craig_work/` to `transcribey_work/` (or run with `--data ./craig_work`). The Docker volume `craig_data` is now `transcribey_data`: copy the data over to the new volume.
 
 > [!NOTE]
 > The image bakes in the `large-v3` model, so the first build downloads about 3 GB and the image is about 6 GB. Other models are downloaded on demand and are discarded when the container exits.
@@ -93,10 +96,10 @@ Prerequisites:
    ```
 2. Start the app:
    ```bash
-   craig-transcriber                # or: python -m craig_transcriber
+   transcribey                # or: python -m transcribey
    ```
 
-Your browser opens at http://127.0.0.1:8765, and your work is saved in `craig_work/`.
+Your browser opens at http://127.0.0.1:8765, and your work is saved in `transcribey_work/`.
 
 > [!TIP]
 > A virtual environment is strongly recommended. The dependencies take several GB, and many Linux distributions refuse system-wide `pip install` with `externally-managed-environment`.
@@ -105,7 +108,7 @@ Your browser opens at http://127.0.0.1:8765, and your work is saved in `craig_wo
 |---|---|---|
 | `--port` | `8765` | Port to listen on |
 | `--host` | `127.0.0.1` | Address to listen on |
-| `--data` | `craig_work` | Folder for audio copies and your work |
+| `--data` | `transcribey_work` | Folder for audio copies and your work |
 | `--no-browser` | | Don't open the browser automatically |
 
 ## Usage
@@ -148,15 +151,15 @@ The Thai models are not published in faster-whisper's format, so each one is con
 
 ```bash
 pip install ".[convert]"
-python -m craig_transcriber.convert_model typhoon     # or: pathumma
+python -m transcribey.convert_model typhoon     # or: pathumma
 ```
 
-The model is written to `craig_work/models/<name>/` (use `--data` if you run `craig-transcriber` with another folder). Until then, choosing it shows this command and the run will not start. Set **Language spoken** to Thai when you use one. `craig_transcriber.convert_model` also takes any Hugging Face Whisper repository id and prints the folder to enter under **Other model name**.
+The model is written to `transcribey_work/models/<name>/` (use `--data` if you run `transcribey` with another folder). Until then, choosing it shows this command and the run will not start. Set **Language spoken** to Thai when you use one. `transcribey.convert_model` also takes any Hugging Face Whisper repository id and prints the folder to enter under **Other model name**.
 
 With Docker, convert on the host, then add the folder to `docker run`:
 
 ```bash
-docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v craig_data:/data -v "$PWD/craig_work/models:/data/work/models:ro" craig-transcriber
+docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v transcribey_data:/data -v "$PWD/transcribey_work/models:/data/work/models:ro" transcribey
 ```
 
 > [!NOTE]
@@ -169,7 +172,7 @@ pip install -e ".[dev]"
 python -m unittest discover -s tests   # stdlib unittest; no model or GPU needed
 ```
 
-Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python), [Biome](https://biomejs.dev/) (`src/craig_transcriber/static/*.js`, `*.css`) and [Prettier](https://prettier.io/) (`static/*.html`). One script runs everything:
+Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python), [Biome](https://biomejs.dev/) (`src/transcribey/static/*.js`, `*.css`) and [Prettier](https://prettier.io/) (`static/*.html`). One script runs everything:
 
 ```bash
 pip install -e ".[dev]"                    # ruff; Biome and Prettier run through npx, so they need Node
@@ -182,9 +185,9 @@ The pre-commit hook re-stages the files it formats and aborts the commit if a ch
 
 | File | Role |
 |---|---|
-| File (in `src/craig_transcriber/`) | Role |
+| File (in `src/transcribey/`) | Role |
 |---|---|
-| `__main__.py` | Entry point (`craig-transcriber`, `python -m craig_transcriber`): parses arguments, wires everything together, starts the server |
+| `__main__.py` | Entry point (`transcribey`, `python -m transcribey`): parses arguments, wires everything together, starts the server |
 | `project.py` | `Project`: the saved project (speakers, lines, audio copies) and exports |
 | `transcribe.py` | `WhisperEngine` (model loading, audio decoding) and `Job` (the background transcription job) |
 | `server.py` | HTTP handler: JSON API, audio streaming with Range support, the page |
@@ -196,7 +199,7 @@ The files in `static/` are re-read on every request, so frontend edits need only
 With Docker, the package is installed into the image at build time. To iterate without rebuilding, mount the source over the installed package:
 
 ```bash
-docker run --init --rm -p 127.0.0.1:8765:8765 -v craig_data:/data -v "$PWD/src/craig_transcriber:/usr/local/lib/python3.12/site-packages/craig_transcriber" craig-transcriber
+docker run --init --rm -p 127.0.0.1:8765:8765 -v transcribey_data:/data -v "$PWD/src/transcribey:/usr/local/lib/python3.12/site-packages/transcribey" transcribey
 ```
 
 Rebuild after changing the `Dockerfile` or dependencies. The model layer is cached before the source is copied, so a source-only rebuild stays quick.
@@ -209,4 +212,4 @@ Rebuild after changing the `Dockerfile` or dependencies. The model layer is cach
   - The card must support CUDA 12.
 - **The graphics card fails or runs out of memory**: the app switches to the CPU on its own. To stay on the GPU, choose a smaller model such as `large-v3-turbo` or `medium`, and close other GPU-heavy apps.
 - **"Could not start on port 8765"**: another copy, or a container, is already using that port. Start with `--port 8766`, or with Docker map `-p 127.0.0.1:8766:8765`.
-- **Start over**: use the **Start over** button in the app. Alternatively, delete `craig_work/`, or for Docker run `docker volume rm craig_data`.
+- **Start over**: use the **Start over** button in the app. Alternatively, delete `transcribey_work/`, or for Docker run `docker volume rm transcribey_data`.

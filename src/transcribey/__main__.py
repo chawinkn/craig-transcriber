@@ -1,4 +1,4 @@
-"""Craig Transcriber: run `craig-transcriber` or `python -m craig_transcriber`, see README.md."""
+"""Transcribey: run `transcribey` or `python -m transcribey`, see README.md."""
 
 import argparse
 import os
@@ -14,13 +14,15 @@ from .project import Project
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="craig-transcriber", description="Craig Transcriber")
+    ap = argparse.ArgumentParser(prog="transcribey", description="Transcribey")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument(
         "--host", default="127.0.0.1", help="address to listen on (0.0.0.0 inside a container)"
     )
     ap.add_argument(
-        "--data", default="craig_work", help="folder where audio copies and your work are kept"
+        "--data",
+        default="transcribey_work",
+        help="folder where audio copies and your work are kept",
     )
     ap.add_argument(
         "--no-browser", action="store_true", help="do not open the browser automatically"
@@ -37,7 +39,7 @@ def main():
         )
     url = f"http://127.0.0.1:{args.port}"
     print(
-        f"\nCraig Transcriber is running at {url}\n"
+        f"\nTranscribey is running at {url}\n"
         f"Your work is saved in: {proj.dir}\nPress Ctrl+C to quit.\n"
     )
     if not transcribe.WhisperEngine.available():

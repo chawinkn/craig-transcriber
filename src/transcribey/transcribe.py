@@ -635,12 +635,12 @@ class Job:
                 if state == "missing":
                     return {
                         "error": f"The {model} model is not installed yet. "
-                        f"Run: python -m craig_transcriber.convert_model {model}"
+                        f"Run: python -m transcribey.convert_model {model}"
                     }
                 if state == "incomplete":
                     return {
                         "error": f"The {model} model is incomplete (missing {', '.join(missing)}). "
-                        f"Run again: python -m craig_transcriber.convert_model {model}"
+                        f"Run again: python -m transcribey.convert_model {model}"
                     }
                 source = str(model_dir(self.project.dir, model))
             self._t0 = time.time()

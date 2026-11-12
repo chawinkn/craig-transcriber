@@ -9,7 +9,7 @@ from unittest import mock
 
 from helpers import IsolatedEngine
 
-from craig_transcriber.transcribe import (
+from transcribey.transcribe import (
     CLIP_PAD,
     MODEL_FILES,
     EngineCrashed,

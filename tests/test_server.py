@@ -6,9 +6,9 @@ from pathlib import Path
 
 from helpers import FakeEngine
 
-from craig_transcriber import server
-from craig_transcriber.project import Project
-from craig_transcriber.transcribe import (
+from transcribey import server
+from transcribey.project import Project
+from transcribey.transcribe import (
     Job,
 )
 

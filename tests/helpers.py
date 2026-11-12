@@ -3,7 +3,7 @@ import os
 import time
 import wave
 
-from craig_transcriber.transcribe import (
+from transcribey.transcribe import (
     ProcessEngine,
 )
 

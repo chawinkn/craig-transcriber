@@ -7,7 +7,7 @@ from pathlib import Path
 
 from helpers import pw, seg, texts, upload, wav
 
-from craig_transcriber.project import Project
+from transcribey.project import Project
 
 
 class ProjectTest(unittest.TestCase):

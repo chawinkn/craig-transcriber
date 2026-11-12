@@ -18,15 +18,15 @@ if [ -z "$fix" ] && [ $# -gt 0 ]; then echo "usage: scripts/check.sh [--fix [fil
 py=() web=() html=()
 for f in "$@"; do
   case "$f" in
-    src/craig_transcriber/static/*.html) html+=("$f") ;;
-    src/craig_transcriber/static/*.js | src/craig_transcriber/static/*.css) web+=("$f") ;;
+    src/transcribey/static/*.html) html+=("$f") ;;
+    src/transcribey/static/*.js | src/transcribey/static/*.css) web+=("$f") ;;
     *.py) py+=("$f") ;;
   esac
 done
 scoped=$(( ${#py[@]} + ${#web[@]} + ${#html[@]} ))
 if [ $# -gt 0 ] && [ "$scoped" -eq 0 ]; then exit 0; fi
-if [ "$scoped" -eq 0 ]; then py=(src tests scripts) web=(src/craig_transcriber/static)
-  html=(src/craig_transcriber/static/*.html)
+if [ "$scoped" -eq 0 ]; then py=(src tests scripts) web=(src/transcribey/static)
+  html=(src/transcribey/static/*.html)
 fi
 
 status=0
