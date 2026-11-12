@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "transcribey"
-version = "0.6.1"
+version = "0.7.0"
 description = "Turn multi-track or single-speaker audio into an accurate, speaker-labelled, reviewable transcript, entirely on your own computer."
 readme = "README.md"
 license = "MIT"

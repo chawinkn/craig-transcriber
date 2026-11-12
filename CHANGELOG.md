@@ -1,5 +1,11 @@
 # transcribey
 
+## 0.7.0
+
+### Minor Changes
+
+- [#45](https://github.com/chawinkn/transcribey/pull/45) [`a4cd35a`](https://github.com/chawinkn/transcribey/commit/a4cd35ae315d77e1960930aef2e027790c705de2) Thanks [@chawinkn](https://github.com/chawinkn)! - **Breaking:** the project is renamed from craig-transcriber to Transcribey, with no alias. Run it with `transcribey` or `python -m transcribey` (and `python -m transcribey.convert_model`). The default data folder is `transcribey_work/`: move your old `craig_work/` there, or start with `--data ./craig_work`. The Docker image is `transcribey` and the volume `craig_data` is now `transcribey_data`: copy the data over. The page and docs now describe multi-track or single-speaker audio, with Craig recordings as one supported input; each audio file is one Speaker.
+
 ## 0.6.1
 
 ### Patch Changes
