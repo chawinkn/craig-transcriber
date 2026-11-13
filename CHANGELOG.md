@@ -1,5 +1,11 @@
 # transcribey
 
+## 0.8.0
+
+### Minor Changes
+
+- [#46](https://github.com/chawinkn/transcribey/pull/46) [`49804e5`](https://github.com/chawinkn/transcribey/commit/49804e5147deeb844c791ffb8089a84a0b02f062) Thanks [@chawinkn](https://github.com/chawinkn)! - Redesign of the page. It has a new look (glass panels, dark and light, self-hosted Inter, Noto Sans Thai and JetBrains Mono fonts) and four clear steps, with steps 3 and 4 shown once there are lines. The review area is one **Transcript lines** section that closes when a run ends. A player bar holds play, previous, next, stop, speed, loop and auto-next. The transcript shows live timeline lanes while it runs. Info tips explain each option. A styled dialog replaces the browser `confirm()` and `alert()`. The Show filter is now **all**, **unsure**, **not reviewed**, **TH/EN**; a reviewed line no longer shows as unsure. The custom model field is now **Use a different model**.
+
 ## 0.7.0
 
 ### Minor Changes
