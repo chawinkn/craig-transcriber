@@ -12,6 +12,9 @@ STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
+    "/inter.woff2": ("inter-latin-wght-normal.woff2", "font/woff2"),
+    "/noto-sans-thai.woff2": ("noto-sans-thai-thai-wght-normal.woff2", "font/woff2"),
+    "/jetbrains-mono.woff2": ("jetbrains-mono-latin-wght-normal.woff2", "font/woff2"),
 }
 
 
@@ -62,8 +65,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        for k, v in (extra or {}).items():
+        for k, v in {"Cache-Control": "no-store", **(extra or {})}.items():
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
@@ -101,7 +103,10 @@ class Handler(BaseHTTPRequestHandler):
             if u.path in STATIC:
                 name, ctype = STATIC[u.path]
                 return self.send_bytes(
-                    200, (Path(__file__).parent / "static" / name).read_bytes(), ctype
+                    200,
+                    (Path(__file__).parent / "static" / name).read_bytes(),
+                    ctype,
+                    {"Cache-Control": "public, max-age=604800"} if ctype == "font/woff2" else None,
                 )
             if u.path == "/api/state":
                 env = {
