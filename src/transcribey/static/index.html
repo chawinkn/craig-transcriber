@@ -4,14 +4,26 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Transcribey</title>
+    <meta
+      name="description"
+      content="Turn multi-track or single-speaker audio into an accurate, speaker-labelled, reviewable transcript, entirely on your own computer."
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230066cc'/%3E%3Cpath d='M8 13v6M13 9v14M18 12v8M23 14v4' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="preload" href="/inter.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/noto-sans-thai.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <main>
       <h1>Transcribey</h1>
       <p class="sub">
-        Turn audio recordings into a written transcript, then listen line by line and fix the
-        mistakes. Everything stays on this computer.
+        Turn multi-track or single-speaker audio into an accurate,
+        <span class="nw">speaker-labelled,</span>
+        reviewable transcript, entirely on your own computer.
       </p>
       <div id="envBox"></div>
 
@@ -20,16 +32,20 @@
           <span class="num">1</span>
           Add your recording
         </h2>
-        <p class="sub">
-          Drop one audio file per person. A Craig multi-track recording works too, usually as a
-          .zip.
-        </p>
+        <p class="sub">Add one audio file for each person. Each file becomes one speaker.</p>
         <div class="drop" id="drop">
-          Drop the .zip or audio files here
+          <div class="wave" id="wave" aria-hidden="true"></div>
+          Drop audio files here, or a Craig
+          <code>.zip</code>
+          (no need to unzip)
           <br />
-          <span class="small">.flac, .wav, .mp3 and similar all work</span>
-          <br />
-          <br />
+          <span class="small">
+            <code>.flac</code>
+            <code>.wav</code>
+            <code>.mp3</code>
+            <code>.m4a</code>
+            and most other audio files
+          </span>
           <button id="pick" class="primary">Choose files…</button>
           <input
             id="file"
@@ -49,52 +65,155 @@
           Make the transcript
         </h2>
         <p class="sub">
-          An AI model called Whisper listens to each person and types what they said. It runs on
-          your computer. The first time, the model is downloaded once.
+          Whisper, a speech-to-text model, listens to each person and writes down what they said.
+          <br />
+          Everything runs on this computer. The model downloads once, the first time you use it.
         </p>
         <div class="grid">
           <div>
-            <label for="lang">Language spoken</label>
+            <div class="labrow">
+              <label for="lang">Language spoken</label>
+              <button
+                type="button"
+                class="info"
+                popovertarget="tip-lang"
+                aria-label="About Language spoken"
+                style="anchor-name: --tip-lang"
+              >
+                i
+              </button>
+              <div id="tip-lang" class="tip" popover style="position-anchor: --tip-lang">
+                Pick
+                <code>Thai</code>
+                for Thai talk, also when people mix in English words. Pick
+                <code>English</code>
+                when everyone speaks English.
+                <code>Detect automatically</code>
+                works for other languages but is weaker on mixed speech.
+              </div>
+            </div>
             <select id="lang">
-              <option value="th">Thai (also best when Thai and English are mixed)</option>
+              <option value="th">Thai (mixed with English is fine)</option>
               <option value="en">English</option>
-              <option value="">Detect automatically (less reliable for mixed speech)</option>
+              <option value="">Detect automatically (weaker on mixed speech)</option>
             </select>
           </div>
           <div>
-            <label for="model">Quality</label>
+            <div class="labrow">
+              <label for="model">Quality</label>
+              <button
+                type="button"
+                class="info"
+                popovertarget="tip-model"
+                aria-label="About Quality"
+                style="anchor-name: --tip-model"
+              >
+                i
+              </button>
+              <div id="tip-model" class="tip" popover style="position-anchor: --tip-model">
+                Bigger models are more accurate but slower. Each model downloads once, the first
+                time you use it. The Thai models
+                <code>Typhoon</code>
+                and
+                <code>Pathumma</code>
+                need a one-time install step first; the app shows the command when you pick one.
+              </div>
+            </div>
             <select id="model"></select>
             <div class="small muted" id="modelHint"></div>
           </div>
           <div>
-            <label for="device">Use</label>
+            <div class="labrow">
+              <label for="device">Use</label>
+              <button
+                type="button"
+                class="info"
+                popovertarget="tip-device"
+                aria-label="About Use"
+                style="anchor-name: --tip-device"
+              >
+                i
+              </button>
+              <div id="tip-device" class="tip" popover style="position-anchor: --tip-device">
+                A graphics card (NVIDIA) is much faster than the processor. If it cannot be used,
+                the app switches to the processor by itself.
+              </div>
+            </div>
             <select id="device">
               <option value="auto">Graphics card if available</option>
               <option value="cpu">Processor only</option>
             </select>
+            <div class="small muted" id="gpuHint"></div>
           </div>
         </div>
         <details>
-          <summary>Optional: help it with names and words</summary>
-          <p class="small muted">
-            Type words that appear in your talk (names, product or technical terms, in the spelling
-            you want). Whisper tends to copy this spelling.
-          </p>
+          <summary>Optional: teach it names and terms</summary>
+          <div class="small muted" style="margin: 6px 0">
+            <label for="prompt">
+              List names and terms that people say, spelled the way you want them. Whisper usually
+              follows your spelling.
+            </label>
+            <button
+              type="button"
+              class="info"
+              popovertarget="tip-prompt"
+              aria-label="About names and terms"
+              style="anchor-name: --tip-prompt"
+            >
+              i
+            </button>
+            <div id="tip-prompt" class="tip" popover style="position-anchor: --tip-prompt">
+              A short list of the words that matter helps more than a long one. It is a hint, not a
+              rule: Whisper may still spell some words its own way.
+            </div>
+          </div>
           <input
             type="text"
             id="prompt"
             style="width: 100%"
-            placeholder="e.g. ขนุน, Chulalongkorn, deadline, backend, Go Fiber"
+            placeholder="e.g. Architecture, Solution, Customer, Deadline, MoM, Sprint"
           />
-          <p class="small muted">
-            Other model name (advanced):
+          <div class="small muted" style="margin: 6px 0">
+            <label for="custom">Use a different model (advanced)</label>
+            <button
+              type="button"
+              class="info"
+              popovertarget="tip-custom"
+              aria-label="About a different model"
+              style="anchor-name: --tip-custom"
+            >
+              i
+            </button>
+            <div id="tip-custom" class="tip" popover style="position-anchor: --tip-custom">
+              <p>Leave this empty to use the Quality choice above.</p>
+              <p>To try another model, enter one of these:</p>
+              <ul>
+                <li>
+                  a size name, e.g.
+                  <code>large-v2</code>
+                  or
+                  <code>distil-large-v3</code>
+                </li>
+                <li>
+                  a faster-whisper repository on Hugging Face, e.g.
+                  <code>Systran/faster-whisper-small</code>
+                </li>
+                <li>
+                  a model folder on this computer, e.g. the one
+                  <code>convert_model</code>
+                  prints
+                </li>
+              </ul>
+              <p>A normal Hugging Face Whisper model does not work here. Convert it first with:</p>
+              <p><code>python -m transcribey.convert_model &lt;repo&gt;</code></p>
+            </div>
             <input
               type="text"
               id="custom"
-              style="width: 280px"
-              placeholder="leave empty, or e.g. a Hugging Face faster-whisper model"
+              style="display: block; width: 100%; margin-top: 6px"
+              placeholder="faster-whisper model name or folder, or leave empty"
             />
-          </p>
+          </div>
         </details>
         <div class="row" style="margin-top: 12px">
           <button class="primary big" id="go">Start transcribing</button>
@@ -104,6 +223,7 @@
         <div id="job" class="hide">
           <p><b id="jobWho"></b></p>
           <div class="bar"><div id="jobBar"></div></div>
+          <div class="lanes" id="lanes"></div>
           <p id="jobText" class="small"></p>
           <p id="jobNote" class="small muted"></p>
           <div class="live" id="live"></div>
@@ -111,63 +231,111 @@
         <div id="jobEnd"></div>
       </section>
 
-      <section id="s3">
+      <section id="s3" class="hide">
         <h2>
           <span class="num">3</span>
           Check and fix
         </h2>
         <p class="sub">
-          Press ▶ on a line to hear it. Type in the box to fix the words. Tick
+          Press ▶ to hear a line and fix any wrong words in its box.
+          <br />
+          Tick
           <b>reviewed</b>
-          when a line is right, or press
-          <b>Alt+Enter</b>
-          to tick it and play the next line.
-          <b>Alt+↓</b>
-          jumps to the next unsure line or
-          <b>Missed speech</b>
-          row, a dashed row where someone spoke but no line holds the words. Edits save
-          automatically.
+          when a line is right. Changes save automatically.
         </p>
-        <div class="row small hide" id="chkBox" style="margin: 8px 0">
-          <button id="chk">Check for missed speech</button>
-          <span class="muted" id="chkMsg"></span>
-        </div>
-        <div class="bar2" id="tools">
-          <button id="halt">■ Stop audio</button>
-          <label>
-            Speed
-            <select id="rate">
-              <option>0.75</option>
-              <option selected>1</option>
-              <option>1.25</option>
-              <option>1.5</option>
-            </select>
-          </label>
-          <label>
-            <input type="checkbox" id="loop" />
-            repeat line
-          </label>
-          <label>
-            <input type="checkbox" id="auto" />
-            play next line automatically
-          </label>
-          <label>
-            Show
-            <select id="filter">
-              <option value="all">all lines</option>
-              <option value="todo">not reviewed yet</option>
-              <option value="check">worth a second look</option>
-              <option value="mixed">Thai/English</option>
-            </select>
-          </label>
-          <span class="small muted" id="counts"></span>
-          <span class="small muted" id="saveState"></span>
-        </div>
-        <details>
-          <summary>Find and replace</summary>
-          <div class="row" style="margin: 8px 0">
-            <input type="text" id="find" placeholder="Find" />
-            <input type="text" id="repl" placeholder="Replace with" />
+        <details id="review">
+          <summary>
+            Transcript lines
+            <span class="newtag" id="newTag" hidden>New</span>
+            <span class="chip" id="sumCheck"></span>
+          </summary>
+          <details>
+            <summary>Keyboard shortcuts and missed speech</summary>
+            <p class="small muted">
+              <b>Alt+Enter</b>
+              marks the line reviewed and plays the next one.
+              <b>Alt+↓</b>
+              jumps to the next
+              <b>unsure</b>
+              line or
+              <b>Missed speech</b>
+              row (dashed: someone spoke, no line has the words).
+            </p>
+          </details>
+          <div class="row small hide" id="chkBox" style="margin: 8px 0">
+            <button id="chk">Check for missed speech</button>
+            <button
+              type="button"
+              class="info"
+              popovertarget="tip-chk"
+              aria-label="About Check for missed speech"
+              style="anchor-name: --tip-chk"
+            >
+              i
+            </button>
+            <div id="tip-chk" class="tip" popover style="position-anchor: --tip-chk">
+              Looks for parts of the audio where someone spoke but no line has their words. Each one
+              shows as a dashed
+              <code>Missed speech</code>
+              row you can listen to, fill in or dismiss.
+            </div>
+            <span class="muted" id="chkMsg"></span>
+          </div>
+          <div class="bar2" id="tools">
+            <div class="labrow">
+              <label for="filter">Show</label>
+              <button
+                type="button"
+                class="info"
+                popovertarget="tip-filter"
+                aria-label="About Show"
+                style="anchor-name: --tip-filter"
+              >
+                i
+              </button>
+              <div id="tip-filter" class="tip" popover style="position-anchor: --tip-filter">
+                <ul>
+                  <li>
+                    <code>all</code>
+                    every line
+                  </li>
+                  <li>
+                    <code>unsure</code>
+                    not reviewed, plus Missed speech rows
+                  </li>
+                  <li>
+                    <code>not reviewed</code>
+                    not ticked yet
+                  </li>
+                  <li>
+                    <code>TH/EN</code>
+                    Thai mixed with English
+                  </li>
+                </ul>
+                <p>
+                  Unsure: a word is underlined, the text looks made up, or words are missing.
+                  Ticking reviewed or editing the line clears it.
+                </p>
+              </div>
+              <select id="filter">
+                <option value="all">all</option>
+                <option value="check">unsure</option>
+                <option value="todo">not reviewed</option>
+                <option value="mixed">TH/EN</option>
+              </select>
+            </div>
+            <span class="progress" id="counts"></span>
+            <span class="small muted" id="saveState"></span>
+          </div>
+          <div class="row findrow">
+            <label class="small">
+              Find
+              <input type="text" id="find" />
+            </label>
+            <label class="small">
+              Replace with
+              <input type="text" id="repl" />
+            </label>
             <label class="small">
               <input type="checkbox" id="matchCase" />
               match case
@@ -175,31 +343,99 @@
             <button id="replaceAll">Replace all</button>
             <span class="small muted" id="replMsg"></span>
           </div>
+          <div id="list"></div>
         </details>
-        <p class="small muted" id="emptyLines">There are no lines yet. Finish step 2 first.</p>
-        <div id="list"></div>
       </section>
 
-      <section id="s4">
+      <section id="s4" class="hide">
         <h2>
           <span class="num">4</span>
           Save your work
         </h2>
         <p class="sub">
-          Each line is written as
+          Each line looks like
           <code>[time] Person: words</code>
-          with all people merged in time order. Your work is also saved automatically in the
+          with everyone merged in time order.
+          <br />
+          Your work is also kept in the
           <code>transcribey_work</code>
-          folder, so you can close this and carry on later.
+          folder, so you can close this page and continue later.
         </p>
         <div class="row">
-          <a href="/export.txt"><button class="primary">Download text (.txt)</button></a>
-          <a href="/export.srt"><button>Download subtitles (.srt)</button></a>
-          <a href="/export.json"><button>Download data (.json)</button></a>
+          <a class="btn primary" href="/export.txt">Download text (.txt)</a>
+          <a class="btn" href="/export.srt">Download subtitles (.srt)</a>
+          <a class="btn" href="/export.json">Download data (.json)</a>
           <button id="reset" style="margin-left: auto">Start over</button>
         </div>
       </section>
       <audio id="player" preload="auto"></audio>
+      <div class="playbar hide" id="playbar" data-state="playing">
+        <div class="pmeta">
+          <div class="pinfo">
+            <span class="dot" id="pbDot"></span>
+            <b id="pbWho"></b>
+            <span id="pbTime"></span>
+          </div>
+          <div class="ptext" id="pbText"></div>
+        </div>
+        <div class="pbtns">
+          <button id="pbPrev" aria-label="Previous line">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 5h2v14H6zM20 5v14L9 12z" />
+            </svg>
+          </button>
+          <button id="pbPlay" aria-label="Play or pause">
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+            </svg>
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+          <button id="pbNext" aria-label="Next line">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M16 5h2v14h-2zM4 5v14l11-7z" />
+            </svg>
+          </button>
+          <button id="pbStop" aria-label="Stop audio">
+            <svg class="stroke" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+        <div class="pset">
+          <select id="rate" aria-label="Speed">
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+          </select>
+          <label class="ptoggle" title="Repeat line">
+            <input type="checkbox" id="loop" aria-label="Repeat line" />
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"
+              />
+            </svg>
+          </label>
+          <label class="ptoggle" title="Play next line automatically">
+            <input type="checkbox" id="auto" aria-label="Play next line automatically" />
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M13 19l9-7-9-7zM2 19l9-7-9-7z" />
+            </svg>
+          </label>
+        </div>
+        <div class="pprog"><div id="pbBar"></div></div>
+      </div>
+      <dialog id="dlg">
+        <form method="dialog">
+          <p id="dlgMsg"></p>
+          <div class="row">
+            <button value="cancel" id="dlgNo">Cancel</button>
+            <button value="ok" id="dlgOk" class="primary">OK</button>
+          </div>
+        </form>
+      </dialog>
     </main>
     <script src="/app.js"></script>
   </body>
