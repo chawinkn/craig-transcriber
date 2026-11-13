@@ -39,6 +39,11 @@ class JobTest(unittest.TestCase):
         self.assertEqual([t for _, t in texts(self.p)], ["hello", "world"])
         self.assertEqual(self.p.speaker(self.sid)["duration"], 4.0)
 
+    def test_status_lists_the_people_and_each_line_span(self):
+        st = self.run_job(FakeEngine).status()
+        self.assertEqual(st["ids"], [self.sid])
+        self.assertEqual([a for a, _ in st["spans"][self.sid]], [0.0, 3.0])
+
     def test_success_stores_the_voice_stretches(self):
         self.run_job(FakeEngine)
         self.assertEqual(Project(self.p.dir).speaker(self.sid)["speech"], [[0.0, 3.5]])
@@ -128,7 +133,7 @@ class JobTest(unittest.TestCase):
             def voice(self, path):
                 raise AssertionError("a stretch run must not look for voice")
 
-        job = self.stretch_job(Clipped, language="th", prompt="ขนุน")
+        job = self.stretch_job(Clipped, language="th", prompt="สมชาย")
         st = job.status()
         self.assertEqual(
             (st["phase"], asked, st["dur"], st["pos"]), ("done", [(9.0, 12.0)], 3.0, 3.0)
@@ -318,11 +323,11 @@ class JobTest(unittest.TestCase):
         self.assertEqual(self.p.state()["lines"][0]["words"], [pw("hello", 0.2)])
 
     def test_success_records_the_run_options(self):
-        self.run_job(FakeEngine, language="th", prompt=" ขนุน, Go Fiber ")
+        self.run_job(FakeEngine, language="th", prompt=" สมชาย, Kubernetes ")
         run = Project(self.p.dir).speaker(self.sid)["run"]
         self.assertEqual(
             {k: run[k] for k in ("model", "language", "vocabulary", "device")},
-            {"model": "m", "language": "th", "vocabulary": "ขนุน, Go Fiber", "device": "cpu"},
+            {"model": "m", "language": "th", "vocabulary": "สมชาย, Kubernetes", "device": "cpu"},
         )
         self.assertGreater(run["at"], 0)
 
@@ -350,8 +355,8 @@ class JobTest(unittest.TestCase):
                 got.append((language, prompt))
                 return super().transcribe(path, language, prompt, clip)
 
-        self.run_job(Listening, language="th", prompt="  ขนุน, Go Fiber ")
-        self.assertEqual(got, [("th", "ขนุน, Go Fiber")])
+        self.run_job(Listening, language="th", prompt="  สมชาย, Kubernetes ")
+        self.assertEqual(got, [("th", "สมชาย, Kubernetes")])
 
     def test_hallucinated_lines_are_kept_and_flagged(self):
         class Noisy(FakeEngine):
