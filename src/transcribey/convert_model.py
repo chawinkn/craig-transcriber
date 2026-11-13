@@ -49,7 +49,7 @@ def main():
     if args.model in THAI_MODELS:
         print(f"Done. Reload the app and choose the {args.model} model.")
     else:
-        print(f"Done. In the app, enter this under Other model name: {out}")
+        print(f"Done. In the app, enter this under Use a different model: {out}")
 
 
 if __name__ == "__main__":

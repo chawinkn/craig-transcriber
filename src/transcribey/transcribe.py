@@ -663,6 +663,8 @@ class Job:
                 note="",
                 error=None,
                 recent=[],
+                ids=list(ids),
+                spans={},
                 pos=0.0,
                 dur=0.0,
                 audio_done=0.0,
@@ -772,6 +774,8 @@ class Job:
     def _collect(self, engine, sid, name, run, dur, segments, path):
         t0, dur = (run.stretch[0], run.stretch[1] - run.stretch[0]) if run.stretch else (0.0, dur)
         self._set(dur=dur, message="")
+        with self._lock:
+            self._st["spans"][sid] = []
         detected = "" if run.language else getattr(engine, "language", "")
         if not run.language:
             self._set(detected=detected)
@@ -782,6 +786,7 @@ class Job:
             self._set(pos=min(max(float(line["end"]) - t0, 0.0), dur))
             kept.append(line)
             with self._lock:
+                self._st["spans"][sid].append([line["start"], line["end"]])
                 self._st["recent"] = (
                     self._st["recent"] + [f"{name} [{project.hms(line['start'])}] {line['text']}"]
                 )[-4:]

@@ -4,6 +4,7 @@ Local app that turns multi-track or single-speaker audio (Craig multi-track Disc
 faster-whisper, then serves a browser UI to listen Line by Line and fix mistakes. Nothing leaves the
 machine. Thai and English (mixed included) come first: the Thai models, Line splitting and joining,
 and the review rules are tuned for them; other languages run through auto-detect, untested.
+Visual rules for the page: `docs/DESIGN.md`.
 Dependencies: stdlib only, plus `faster-whisper` (which pulls in `av` and `numpy`). Domain terms:
 `GLOSSARY.md`; user-facing changes: `CHANGELOG.md`.
 
@@ -79,7 +80,8 @@ see the lock or the dict.
   `RunOptions(model, source, language, prefer_cpu, prompt, check, stretch)`. Modes: full run;
   `check` = voice only; `stretch` = one Speaker's `start`/`end` transcribed again.
 - `status()` returns a snapshot (polled at `/api/status`, `elapsed` computed inside); also
-  `cancel()` and `running`.
+  `cancel()` and `running`. `ids` lists the Speakers of the run and `spans` maps each to the
+  `[start, end]` of its Lines so far; the page draws them as live timeline lanes.
 - Per Speaker it collects Lines from `lines_from_segments()` into a local list and calls
   `project.replace_lines` only on success, so a failed or cancelled run keeps that Speaker's
   previous Lines; earlier Speakers stay saved.
@@ -116,6 +118,12 @@ see the lock or the dict.
 ## `static/` and `__main__.py`
 
 - `static/` (inside the package, shipped as package data) is the whole frontend: `index.html`
-  (markup, at `/`), `app.js`, `style.css`, all served from the `STATIC` map in `server.py`. Each
-  file is re-read on every request, so an edit needs only a browser reload. No build step.
+  (markup, at `/`), `app.js`, `style.css` and three self-hosted `.woff2` fonts (Inter, Noto Sans
+  Thai, JetBrains Mono; notice in `FONTS-LICENSE.txt`), all served from the `STATIC` map in
+  `server.py`. Each file is re-read on every request, so an edit needs only a browser reload. The
+  fonts are sent with `Cache-Control: public, max-age=604800`, everything else `no-store`. No build
+  step.
+- The page is four steps; steps 3 and 4 stay hidden until Lines exist. The review area is one
+  `details#review` ("Transcript lines"), closed by default and closed again by `tick()` whenever a
+  job ends. Dialogs use one `<dialog>` (`ask`, `tell`), not `confirm()` or `alert()`.
 - `__main__.py`: argparse, builds `Project` and `Job`, starts the server.

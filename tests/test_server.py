@@ -38,10 +38,28 @@ class ServerTest(unittest.TestCase):
         for path, want in (
             ("/app.js", "text/javascript; charset=utf-8"),
             ("/style.css", "text/css; charset=utf-8"),
+            ("/inter.woff2", "font/woff2"),
+            ("/noto-sans-thai.woff2", "font/woff2"),
+            ("/jetbrains-mono.woff2", "font/woff2"),
         ):
             status, ctype, body = self.request("GET", path)
             self.assertEqual((status, ctype), (200, want))
             self.assertTrue(body)
+
+    def test_fonts_are_cached_but_pages_are_not(self):
+        def cache_control(path):
+            c = http.client.HTTPConnection("127.0.0.1", self.srv.server_address[1], timeout=5)
+            self.addCleanup(c.close)
+            c.request("GET", path)
+            r = c.getresponse()
+            r.read()
+            return r.getheaders(), r.getheader("Cache-Control")
+
+        headers, value = cache_control("/inter.woff2")
+        self.assertEqual(value, "public, max-age=604800")
+        self.assertEqual(sum(k.lower() == "cache-control" for k, _ in headers), 1)
+        self.assertEqual(cache_control("/")[1], "no-store")
+        self.assertEqual(cache_control("/style.css")[1], "no-store")
 
     def test_blocks_foreign_host_and_origin(self):
         self.assertEqual(self.request("GET", "/", {"Host": "evil.example"})[0], 403)

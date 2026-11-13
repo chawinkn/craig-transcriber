@@ -4,212 +4,156 @@
 
 **Turn multi-track or single-speaker audio into an accurate, speaker-labelled, reviewable transcript, entirely on your own computer.**
 
-![Python](https://img.shields.io/badge/python-3.9%2B-blue)
-![Whisper](https://img.shields.io/badge/engine-faster--whisper-green)
-![Docker](https://img.shields.io/badge/docker-ready-2496ED)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-
 [Overview](#overview) • [Features](#features) • [Getting started](#getting-started) • [Usage](#usage) • [Choosing a model](#choosing-a-model) • [Development](#development) • [Troubleshooting](#troubleshooting)
 
 </div>
 
 ## Overview
 
-Transcribey runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) on each audio file and merges the results into one transcript in time order. Each audio file is treated as one Speaker, so each line is labelled with the right speaker, with no diarization (guessing who talks in a mixed recording). A browser-based review screen then lets you listen line by line and fix what Whisper got wrong. Multi-track Discord recordings from [Craig](https://craig.chat) are one supported input.
+Transcribey transcribes multi-track or single-speaker audio using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and merges the output in time order. Each audio file represents one speaker, labelling lines directly without diarization. A browser review screen lets you listen and edit line by line. Supports Craig multi-track Discord `.zip` exports and standalone audio files.
 
 > [!NOTE]
-> Nothing leaves your machine. Audio, transcripts and models all stay local. This project is not affiliated with Craig or OpenAI.
+> Everything runs locally on your computer. Audio, transcripts, and models never leave your machine. Not affiliated with Craig or OpenAI.
 
 ### Language support
 
-The project currently aims at **Thai and English first**, including Thai speech with English words mixed in. The models, defaults and review rules are tuned and tested for these two:
-
-- The optional Thai models only transcribe Thai.
-- How Lines are split and joined is tuned for Thai, which writes no spaces between words.
-- The check for made-up text tags any letters that are neither Thai nor Latin as **unsure**.
-
-Other languages Whisper knows can still be transcribed with **Detect automatically**, but they are untested. Languages in other scripts (Japanese, Chinese, Arabic, ...) will have every Line tagged unsure.
+Tuned for **Thai and English**, including mixed speech:
+- Optional Thai models transcribe Thai speech only.
+- Line segmentation respects Thai script (no spaces between words).
+- Characters outside Thai and Latin alphabets are flagged as unsure.
+- Other languages run through **Detect automatically** (untested; non-Latin and non-Thai scripts are marked unsure).
 
 ## Features
 
-- **Drop in Craig's `.zip`**, or individual audio files (FLAC, WAV, MP3, OGG, Opus, M4A, ...). One track per person.
-- **Local transcription**: Whisper models from `small` to `large-v3`. It runs on an NVIDIA GPU (CUDA 12), falls back automatically to the CPU, and is resilient to GPU errors mid-run.
-- **Thai and English first**, or auto-detect for other languages (untested, see [Language support](#language-support)). Thai mode handles mixed Thai/English speech best.
-- **Spelling hints**: a word list steers how names and technical terms are written.
-- **Fast review**:
-  - Play any line, change the speed, loop it, or auto-play the next one.
-  - `Alt+Enter` marks a line reviewed and plays the next.
-  - `Alt+↓` jumps to the next unsure line you have not reviewed.
-  - Filter to unreviewed lines, lines worth a second look (unsure and not reviewed yet), or lines mixing Thai and English.
-  - Find and replace across the transcript.
-- **Safe by default**:
-  - Edits save automatically.
-  - Re-transcribing a person replaces their lines only after the new run succeeds.
-  - Closing the tab with unsaved edits warns you.
-- **Export** as `.txt` (`[time] Person: words`), `.srt` subtitles, or `.json`.
+- **Multi-track input**: Craig `.zip` archives or individual audio files (FLAC, WAV, MP3, OGG, Opus, M4A). One track per speaker.
+- **Local transcription**: Whisper models (`small` to `large-v3`) running on NVIDIA GPUs (CUDA 12) with automatic CPU fallback.
+- **Thai and English tuned**: Optimized segmentation and vocabulary hints for mixed speech.
+- **In-browser review**:
+  - Floating player with speed controls, looping, and auto-advance.
+  - Shortcuts: `Alt+Enter` to mark reviewed and advance; `Alt+↓` to jump to unsure lines or missed speech.
+  - Filters: **all**, **unsure**, **not reviewed**, and **TH/EN**.
+  - In-page search and replace.
+- **Safe editing**: Automatic saving to disk, confirmation before closing with unsaved edits, and non-destructive re-runs.
+- **Export formats**: Export to `.txt`, `.srt` subtitles, or `.json`.
 
 ## Getting started
 
-You can run it with Docker (simplest, with the `large-v3` model included) or directly with Python.
+Run Transcribey via Docker (bundles `large-v3`) or with Python directly.
 
 ### Option 1: Docker
 
-Prerequisites:
+Prerequisites: [Docker](https://docs.docker.com/get-docker/), plus an NVIDIA GPU with the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) for GPU acceleration.
 
-- [Docker](https://docs.docker.com/get-docker/)
-- For GPU acceleration: an NVIDIA driver and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) _(Docker Desktop on Windows/WSL2 already includes GPU support)_
+```bash
+# Build the image (omit --build-arg GPU=1 for CPU only)
+docker build --build-arg GPU=1 -t transcribey .
 
-1. Build the image:
-   ```bash
-   docker build --build-arg GPU=1 -t transcribey .   # omit --build-arg GPU=1 for CPU only
-   ```
-2. Run it (drop `--gpus all` on a machine without an NVIDIA GPU):
-   ```bash
-   docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v transcribey_data:/data transcribey
-   ```
-3. Open http://127.0.0.1:8765.
+# Run the container (omit --gpus all on CPU-only machines)
+docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v transcribey_data:/data transcribey
+```
 
-Your work is stored in the `transcribey_data` volume and survives rebuilds.
-
-> [!NOTE]
-> Moving from an older version? Move `craig_work/` to `transcribey_work/` (or run with `--data ./craig_work`). The Docker volume `craig_data` is now `transcribey_data`: copy the data over to the new volume.
-
-> [!NOTE]
-> The image bakes in the `large-v3` model, so the first build downloads about 3 GB and the image is about 6 GB. Other models are downloaded on demand and are discarded when the container exits.
+Open http://127.0.0.1:8765. Transcripts persist in the `transcribey_data` volume.
 
 > [!IMPORTANT]
-> Keep `127.0.0.1:` in the `-p` flag. The app has no login, so publishing the port on all interfaces lets anyone on your network read and delete your transcripts.
+> Keep `127.0.0.1:` in `-p`. The server has no authentication; exposing it to other interfaces lets anyone on your network access your transcripts.
 
 ### Option 2: Python
 
-Prerequisites:
+Prerequisites: [Python](https://www.python.org/downloads/) 3.9+ (and CUDA 12 drivers for NVIDIA GPU acceleration).
 
-- [Python](https://www.python.org/downloads/) 3.9 or later
-- For GPU acceleration: an NVIDIA GPU with a driver that supports CUDA 12
+```bash
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install .
+pip install ".[gpu]"             # optional, for NVIDIA GPUs
+transcribey                      # or: python -m transcribey
+```
 
-1. Create a virtual environment and install the app:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate        # Windows: .venv\Scripts\activate
-   pip install .
-   pip install ".[gpu]"             # optional, for NVIDIA GPUs
-   ```
-2. Start the app:
-   ```bash
-   transcribey                # or: python -m transcribey
-   ```
-
-Your browser opens at http://127.0.0.1:8765, and your work is saved in `transcribey_work/`.
-
-> [!TIP]
-> A virtual environment is strongly recommended. The dependencies take several GB, and many Linux distributions refuse system-wide `pip install` with `externally-managed-environment`.
+The browser opens at http://127.0.0.1:8765. Work is saved to `transcribey_work/`.
 
 | Flag | Default | Description |
 |---|---|---|
 | `--port` | `8765` | Port to listen on |
 | `--host` | `127.0.0.1` | Address to listen on |
-| `--data` | `transcribey_work` | Folder for audio copies and your work |
-| `--no-browser` | | Don't open the browser automatically |
+| `--data` | `transcribey_work` | Data folder for audio copies and project files |
+| `--no-browser` | | Do not open the browser automatically |
 
 ## Usage
 
-The app walks you through four steps:
+1. **Add your recording.** Drop in a Craig `.zip` or audio tracks. Each file becomes a speaker you can rename.
 
-1. **Add your recording.** Download the multi-track `.zip` from Craig after the call, and drop it on the page. Each person appears with their Discord name, and you can rename them.
+   ![Add your recording](docs/images/add-recording.png)
+
 2. **Make the transcript.**
-   - Pick the language, the quality (model) and the device, then press **Start transcribing**.
-   - Optionally, open the hints and list names or terms in the spelling you want.
-   - Progress, an estimated time left and the latest lines show live.
+   - Pick the language, quality (model), and device, then click **Start transcribing**.
+   - Optionally add vocabulary hints to guide spelling for names and technical terms.
+   - Progress, estimated remaining time, and recent lines stream live.
+
+   ![Make the transcript](docs/images/make-transcript.png)
+
 3. **Check and fix.**
-   - Press ▶ to hear a line, type to correct it, and tick **reviewed** (or press `Alt+Enter` to tick it and move on).
-   - Start with the lines tagged **unsure**, using the "worth a second look" filter, and press `Alt+↓` to jump to the next one. The "Thai/English" filter lists the lines tagged **TH/EN**.
-     A line is **unsure** when it has a word the model was not confident about (underlined in the text), or when its text looks made up (a phrase repeated over and over, letters that are neither Thai nor Latin, or faster speech than anyone manages), or when a long Line has far too little text for its length (speech the model missed). The tag shows why next to it (the unsure words, repeated phrase, foreign letters, timing or missed speech). Editing the text clears the tag and the underlines, whatever the cause. Lines from older runs have no word confidence, so only the made-up checks apply to them; transcribe the person again to get underlines. **TH/EN** marks Thai with English words in it.
-   - A dashed **Missed speech** row marks 2 seconds or more of voice (found on each run) that no line covers. Press ▶ to hear it; `Alt+↓` stops there too. **+ add line here** adds an empty line with the stretch's times, ready to type into; **dismiss** hides the row until that person is transcribed again. Exports contain only lines.
-     A project transcribed before this feature shows **Check for missed speech** above the lines; it finds the voice in seconds without transcribing again and changes no line.
-     **transcribe this part again**, on a Missed speech row or a "missed speech" line, transcribes just that stretch with the choices from step 2 and replaces only the lines inside it (it asks first if you edited any); a failed or stopped run changes nothing.
-4. **Save your work.** Download the transcript as `.txt`, `.srt` or `.json`.
+   - Open **Transcript lines** once transcription finishes.
+   - Click ▶ to listen, correct mistakes in place, and tick **reviewed** (or press `Alt+Enter`).
+   - Use the **unsure** filter and `Alt+↓` to inspect low-confidence words (underlined) or anomalous lines (repetition, non-Latin/Thai text).
+   - Dashed **Missed speech** rows mark detected speech without lines. Click **+ add line here** to create a line, or **transcribe this part again** to re-run that segment.
+
+   ![Check and fix](docs/images/check-and-fix.png)
+
+4. **Save your work.** Download the transcript as `.txt`, `.srt`, or `.json`.
+
+   ![Save your work](docs/images/save-ur-work.png)
 
 ## Choosing a model
 
 | Model | Download | Notes |
 |---|---|---|
-| `small` | ~0.5 GB | Default without a GPU; fine on a CPU |
-| `medium` | ~1.5 GB | Better; slow on a CPU |
-| `large-v3-turbo` | ~1.6 GB | Several times faster than `large-v3`; accuracy varies by language |
-| `large-v3` | ~3 GB | Most accurate; default with a GPU; fits in ~6 GB of VRAM |
-| `typhoon` | ~6 GB to install, ~3 GB after | Thai only: [Typhoon Whisper Large v3](https://huggingface.co/typhoon-ai/typhoon-whisper-large-v3), tuned for accuracy |
-| `pathumma` | ~3 GB | Thai only: [Pathumma Whisper Large v3, noise fine-tuned](https://huggingface.co/PogusTheWhisper/Pathumma-whisper-th-large-v3-natural-noise-finetuned), for casual speech with background noise |
+| `small` | ~0.5 GB | Default for CPU; fast |
+| `medium` | ~1.5 GB | Balanced; slower on CPU |
+| `large-v3-turbo` | ~1.6 GB | Fast, near `large-v3` accuracy |
+| `large-v3` | ~3 GB | Most accurate; default with GPU (~6 GB VRAM) |
+| `typhoon` | ~6 GB to install, ~3 GB after | Thai only: [Typhoon Whisper Large v3](https://huggingface.co/typhoon-ai/typhoon-whisper-large-v3) |
+| `pathumma` | ~3 GB | Thai only: [Pathumma Whisper Large v3](https://huggingface.co/PogusTheWhisper/Pathumma-whisper-th-large-v3-natural-noise-finetuned), noise tuned |
 
-You can also enter any other faster-whisper model name or Hugging Face repository under **Other model name**.
-
-> [!NOTE]
-> In a test on one-minute Thai clips, `pathumma` spelled clear speech best, with `typhoon` close behind and `large-v3` last. None of them read noisy speech over game audio well. Both Thai models return about a minute of speech as **one long line**, so reviewing line by line is harder; `large-v3` stays the default for that reason.
+Enter custom Hugging Face CTranslate2 repositories or local folders under **Use a different model**.
 
 ### Installing a Thai model
 
-The Thai models are not published in faster-whisper's format, so each one is converted once on your machine. The conversion needs extra packages that the app itself does not:
+Thai models require a one-time conversion:
 
 ```bash
 pip install ".[convert]"
 python -m transcribey.convert_model typhoon     # or: pathumma
 ```
 
-The model is written to `transcribey_work/models/<name>/` (use `--data` if you run `transcribey` with another folder). Until then, choosing it shows this command and the run will not start. Set **Language spoken** to Thai when you use one. `transcribey.convert_model` also takes any Hugging Face Whisper repository id and prints the folder to enter under **Other model name**.
-
-With Docker, convert on the host, then add the folder to `docker run`:
-
-```bash
-docker run --init --rm --gpus all -p 127.0.0.1:8765:8765 -v transcribey_data:/data -v "$PWD/transcribey_work/models:/data/work/models:ro" transcribey
-```
-
-> [!NOTE]
-> Each person's track is transcribed separately and spans the whole recording, though silence is skipped. Total time grows with both the meeting length and the number of people. Without a GPU, the large models take hours for a long meeting.
+Models save to `transcribey_work/models/<name>/`. For Docker, mount the folder with `-v "$PWD/transcribey_work/models:/data/work/models:ro"`.
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-python -m unittest discover -s tests   # stdlib unittest; no model or GPU needed
+python -m unittest discover -s tests       # run tests
+bash scripts/check.sh --fix                 # lint and format (ruff, Biome, Prettier)
+git config core.hooksPath .githooks        # set up pre-commit hook
 ```
 
-Code is formatted and linted with [ruff](https://docs.astral.sh/ruff/) (Python), [Biome](https://biomejs.dev/) (`src/transcribey/static/*.js`, `*.css`) and [Prettier](https://prettier.io/) (`static/*.html`). One script runs everything:
-
-```bash
-pip install -e ".[dev]"                    # ruff; Biome and Prettier run through npx, so they need Node
-bash scripts/check.sh                      # check the whole repo, as CI does
-bash scripts/check.sh --fix [files...]     # format and fix the files (all if none), then check them
-git config core.hooksPath .githooks        # run the fix on staged files before every commit
-```
-
-The pre-commit hook re-stages the files it formats and aborts the commit if a check still fails. CI (GitHub Actions, Python 3.9 and 3.12) runs `scripts/check.sh` and the tests on every pull request.
-
-| File | Role |
+| Path | Purpose |
 |---|---|
-| File (in `src/transcribey/`) | Role |
-|---|---|
-| `__main__.py` | Entry point (`transcribey`, `python -m transcribey`): parses arguments, wires everything together, starts the server |
-| `project.py` | `Project`: the saved project (speakers, lines, audio copies) and exports |
-| `transcribe.py` | `WhisperEngine` (model loading, audio decoding) and `Job` (the background transcription job) |
-| `server.py` | HTTP handler: JSON API, audio streaming with Range support, the page |
-| `static/` | The whole frontend (`index.html`, `app.js`, `style.css`), with no build step |
-| `convert_model.py` | Optional one-time installer for the Thai models; not imported by the app |
+| `src/transcribey/__main__.py` | CLI entry point and server startup |
+| `src/transcribey/project.py` | State persistence, review rules, exports |
+| `src/transcribey/transcribe.py` | Engine worker, Whisper loading, background jobs |
+| `src/transcribey/server.py` | HTTP server, API routes, Range audio streaming |
+| `src/transcribey/static/` | Frontend assets (reloaded on refresh, no build step) |
+| `src/transcribey/convert_model.py` | Model converter for Thai weights |
 
-The files in `static/` are re-read on every request, so frontend edits need only a browser reload. Python edits need a restart.
-
-With Docker, the package is installed into the image at build time. To iterate without rebuilding, mount the source over the installed package:
-
-```bash
-docker run --init --rm -p 127.0.0.1:8765:8765 -v transcribey_data:/data -v "$PWD/src/transcribey:/usr/local/lib/python3.12/site-packages/transcribey" transcribey
-```
-
-Rebuild after changing the `Dockerfile` or dependencies. The model layer is cached before the source is copied, so a source-only rebuild stays quick.
+Static files in `static/` reload on browser refresh. Python changes require restarting the server.
 
 ## Troubleshooting
 
-- **"No NVIDIA graphics card was found"**:
-  - Update your NVIDIA driver, and with Python, install the optional `nvidia-*` packages above.
-  - With Docker, build with `--build-arg GPU=1` and run with `--gpus all`.
-  - The card must support CUDA 12.
-- **The graphics card fails or runs out of memory**: the app switches to the CPU on its own. To stay on the GPU, choose a smaller model such as `large-v3-turbo` or `medium`, and close other GPU-heavy apps.
-- **"Could not start on port 8765"**: another copy, or a container, is already using that port. Start with `--port 8766`, or with Docker map `-p 127.0.0.1:8766:8765`.
-- **Start over**: use the **Start over** button in the app. Alternatively, delete `transcribey_work/`, or for Docker run `docker volume rm transcribey_data`.
+- **No NVIDIA graphics card found**: Ensure the card supports CUDA 12 and drivers are installed. With Docker, verify `--build-arg GPU=1` and `--gpus all`.
+- **GPU out of memory**: Transcribey automatically falls back to CPU. To stay on GPU, pick `large-v3-turbo` or `medium`.
+- **Port already in use**: Start with `--port 8766` or adjust Docker port mapping (`-p 127.0.0.1:8766:8765`).
+- **Reset data**: Click **Start over** in the UI, delete `transcribey_work/`, or remove the Docker volume (`docker volume rm transcribey_data`).
+
+## Credits
+
+Self-hosted fonts under SIL Open Font License 1.1: [Inter](https://rsms.me/inter/), [Noto Sans Thai](https://fonts.google.com/noto/specimen/Noto+Sans+Thai), and [JetBrains Mono](https://www.jetbrains.com/lp/mono/). See `src/transcribey/static/FONTS-LICENSE.txt`.
